@@ -78,12 +78,12 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
     ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         prok_with_plasmids_lines = prok_with_plasmids_file_obj.read().splitlines()
-        ## skip the header.
-        prok_with_plasmids_data = prok_with_plasmids_lines[1:]
-        ## get the right column (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
-        refseq_id_column = [line.split("\t")[-5].replace("GCA", "GCF") for line in prok_with_plasmids_data]
-        ## filter for valid IDs (some rows have a '-' as a blank placeholder).
-        refseq_ids = [x for x in refseq_id_column if x.startswith("GCF")]
+    ## skip the header.
+    prok_with_plasmids_data = prok_with_plasmids_lines[1:]
+    ## get the right column (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
+    refseq_id_column = [line.split("\t")[-5].replace("GCA", "GCF") for line in prok_with_plasmids_data]
+    ## filter for valid IDs (some rows have a '-' as a blank placeholder).
+    refseq_ids = [x for x in refseq_id_column if x.startswith("GCF")]
     ## now make the RunID csv file.
     with open(RunID_table_outfile, "w") as RunID_table_outfile_obj:
         header = "RefSeq_ID,SRA_ID,Run_ID\n"
@@ -193,65 +193,39 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
                     os.remove(md5_file)
     return
  
-        
-def create_genome_metadatacsv(ftp_file, table_outfile, genome_metadatacsv):
-    reference_genome=[]
-    with open(ftp_file, "r") as ftp_path_list:
-        for line in ftp_path_list:
-            ftp_path = line.strip()
-            genome_id = ftp_path.split('/')[-1]
-            genome_id += '_genomic.gbff.gz'
-            reference_genome.append(genome_id)
-    run_accession_list=[]
-    with open(table_outfile, "r") as table_obj_csv:
-        table_csv = csv.DictReader(table_obj_csv)
-        for row in table_csv:
-            run_accession_id = row["Run_accession_ID"]
-            if run_accession_id != "NA":
-                run_accession_list.append(row["Run_accession_ID"])
-    rows = zip(reference_genome, run_accession_list)
-    with open(genome_metadatacsv, "w", newline='') as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(['ReferenceGenome','SRA_Data'])
-        writer.writerows(rows)
-    print(f"CSV file '{csv_file}' has been created successfully.")
-    return
 
-
-def download_fastq_reads(SRA_data_dir, table_outfile):
+def download_fastq_reads(SRA_data_dir, RunID_table_file):
         """
-        the sra_id has to be the last part of the directory.
+        the Run_ID has to be the last part of the directory.
         see documentation here:
         https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump
         """
-        sra_numbers = []
-        with open(table_outfile, "r") as table_outfile_obj:
-            table_csv = csv.DictReader(table_outfile_obj)
-            for row in table_csv:
-                run_accession_id = row["SRA_Data"]
-                if run_accession_id != "NA":
-                    sra_numbers.append(run_accession_id.strip())
-        
-        for sra_id in sra_numbers:
-            sra_dir_path = os.path.join(SRA_data_dir, sra_id)
-            if os.path.exists(sra_dir_path): continue
-            prefetch_args = ["prefetch", sra_id, "-O", sra_dir_path]
+        Run_IDs = []
+        with open(RunID_table_file, "r") as RunID_table_file_obj:
+            table_csv = csv.DictReader(RunID_table_file_obj)
+            Run_IDs = [row["Run_ID"] for row in table_csv]
+        for Run_ID in Run_IDs:
+            prefetch_dir_path = os.path.join(SRA_data_dir, Run_ID)
+            if os.path.exists(prefetch_dir_path): ## skip if we have already prefetched the read data.
+                continue
+            ## prefetch will create the prefetch_dir_path automatically-- give it the SRA_data_dir.
+            prefetch_args = ["prefetch", Run_ID, "-O", SRA_data_dir]
             print (" ".join(prefetch_args))
             subprocess.run(prefetch_args)
+        print("prefetch step completed.")
         my_cwd = os.getcwd()
         os.chdir(SRA_data_dir)
-        for sra_id in sra_numbers:
-            sra_fastq_file_1 = sra_id + "_1.fastq"
-            sra_fastq_file_2 = sra_id + "_2.fastq"
+        for Run_ID in Run_IDs:
+            sra_fastq_file_1 = Run_ID + "_1.fastq"
+            sra_fastq_file_2 = Run_ID + "_2.fastq"
             if os.path.exists(sra_fastq_file_1) and os.path.exists(sra_fastq_file_2):
                 continue
             else:
-                print ("Generating fastq for: " + sra_id)
-                fasterq_dump_args = ["fasterq-dump", "--threads", "10", sra_id]
+                print ("Generating fastq for: " + Run_ID)
+                fasterq_dump_args = ["fasterq-dump", "--threads", "10", Run_ID]
                 print(" ".join(fasterq_dump_args))
                 subprocess.run(fasterq_dump_args)
-    
-        # now change back to original working directory.
+        ## now change back to original working directory.
         os.chdir(my_cwd)
         return
 
@@ -287,7 +261,7 @@ def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
 
 
 def make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):    
-    gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff")]
+    gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     print(gzfilelist)
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
@@ -296,7 +270,6 @@ def make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
         print("making: ", fasta_outfile)
         generate_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
-
 
 
 def make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
@@ -327,9 +300,8 @@ def run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_dat
             output_path = os.path.join(results_dir, genome_id)
             ## run with 10 threads by default.
             kallisto_quant_args = ["kallisto", "quant", "-t", "8", "-i", index_path, "-o", output_path, "-b", "100", read_path1, read_path2]
+            ##print(" ".join(kallisto_quant_args))
             subprocess.run(kallisto_quant_args)
-            #print(" ".join(kallisto_quant_args))
-            #quit()
     return
 
 
@@ -550,11 +522,10 @@ def pipeline_main():
     logging.basicConfig(filename=run_log_file, level=logging.INFO)
     
     prokaryotes_with_plasmids_file = "../results/prokaryotes-with-plasmids.txt"
-    RunID_table_file = "../results/RunID_table.txt"
+    RunID_table_file = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
+    SRA_data_dir = "../data/SRA/"
     
-    SRA_data_dir = "../results/SRA/"
-    refgenomes_dir = "../results/ref_genomes/"
     kallisto_ref_dir = "../results/kallisto_references/"
     kallisto_index_dir = "../results/kallisto_indices/"
     kallisto_quant_results_dir = "../results/kallisto_quant/"
@@ -581,22 +552,32 @@ def pipeline_main():
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
     ## prokaryotes-with-plasmids.txt file.
-    refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
-    ## now download the reference genomes.
-    fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir)
-
+    stage_2_complete_file = "../results/stage2.done"
+    if exists(stage_2_complete_file):
+        print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
+    else:
+        refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
+        ## now download the reference genomes.
+        fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir)
+        with open(stage_2_complete_file, "w") as stage_2_complete_log:
+            stage_2_complete_log.write("reference genomes downloaded successfully.\n")
+        
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
-    ##NCBI_genomeID_to_SRA_ID_dict = make_genome_to_SRA_dict(genome_metadatacsv)
-    ##download_fastq_reads(SRA_data_dir, genome_metadatacsv)
+    stage_3_complete_file = "../results/stage3.done"
+    if exists(stage_3_complete_file):
+        print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
+    else:
+        download_fastq_reads(SRA_data_dir, RunID_table_file)
+        with open(stage_3_complete_file, "w") as stage_3_complete_log:
+            stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
-    ##create_genome_metadatacsv(ftp_path_file, table_outfile, genome_metadatacsv)
 
-    ##make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_dir)
+    ##make_NCBI_fasta_refs_for_kallisto(reference_genome_dir, kallisto_ref_dir)
     ##make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
     ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
     ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
     ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
-    ##tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file)
+    ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
     return
 
 
