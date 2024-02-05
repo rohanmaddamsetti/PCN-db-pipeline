@@ -187,7 +187,7 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
             ## if we are here, then assume the try block worked.
             if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
                 if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                    gbff_fetched = True  ## assume success if the previous lines worked,
+                    gbff_fetched = True  ## assume success if the checksum matches,
                     gbff_fetch_attempts = 0  ## and don't try again.
                 else:
                     os.remove(gbff_gz_file)
