@@ -567,7 +567,13 @@ def pipeline_main():
     if exists(stage_3_complete_file):
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
+        SRA_download_start_time = time.time()  # Record the start time
         download_fastq_reads(SRA_data_dir, RunID_table_file)
+        SRA_download_end_time = time.time()  # Record the end time
+        SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
+        Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds"
+        print(Stage3TimeMessage)
+        logging.info(Stage3TimeMessage)
         with open(stage_3_complete_file, "w") as stage_3_complete_log:
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
