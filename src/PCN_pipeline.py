@@ -3,11 +3,12 @@
 """
 PCN_pipeline.py by Maggie Wilson and Rohan Maddamsetti.
 
-Dependencies:
-pip install pysradb
-pip install biopython
-conda install conda-forge::ncbi-datasets-cli
-conda install bioconda::kallisto
+For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $PATH.
+
+Currently, this pipeline only analyzes Illumina short-read data with kallisto.
+
+In the future, one could additionally analyze long-read data as well, by using the
+state-of-the-art in pseudoalignment analyses, Themisto (published 2023 in Bioinformatics).
 
 """
 
@@ -15,33 +16,26 @@ import subprocess
 import argparse
 import json
 import os
+import sys
 import gzip
 import re
 import csv
 from Bio import SeqIO
 from os.path import basename, exists
 import urllib.request
+import time
+import logging
 
 
 ################################################################################
 ## Functions.
 
-def convert_ids_to_path(gcf_id, asm_id):
-    gcf_id_parts = gcf_id.split('_')
-    gcf_id_prefix = gcf_id_parts[0]
-    gcf_id_nums = gcf_id_parts[1].zfill(9)
-    gcf_id_path = '/'.join([gcf_id_prefix, gcf_id_nums[:3], gcf_id_nums[3:6], gcf_id_nums[6:9]])
-    path = f"ftp://ftp.ncbi.nlm.nih.gov/genomes/all/{gcf_id_path}/{gcf_id}_{asm_id}"
-    return path
-
-
 def get_SRA_ID_from_RefSeqID(refseq_id):
+    ## datasets must be in $PATH.
     bash_command = f'datasets summary genome accession {refseq_id}'
-    output = subprocess.check_output(bash_command, shell=True)
-    output_str = output.decode('utf-8')
-    
-    data = output_str
-    json_data = json.loads(data)
+    cmd_output = subprocess.check_output(bash_command, shell=True)
+    json_output = cmd_output.decode('utf-8')
+    json_data = json.loads(json_output)
     sra_id = "NA"
     reports = json_data.get("reports")
     if reports:
@@ -51,11 +45,10 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
                 if sample_id.get("db") == "SRA":
                     sra_id = sample_id.get("value")
                     break
-    print(sra_id)
     return(sra_id)
 
 
-def get_run_ID(sra_id):
+def get_Run_IDs(sra_id):
     ## pysradb must be in $PATH.
     pysradb_command = f'pysradb metadata {sra_id}'
     pysradb_attempts = 5
@@ -63,130 +56,142 @@ def get_run_ID(sra_id):
     while pysradb_attempts:
         try:
             pysradb_output = subprocess.check_output(pysradb_command, shell=True)
-        ## assuming the previous line worked--
+            ## assuming the previous line worked--
             pysradb_attempts = 0
             pysra_command_worked = True
         except subprocess.CalledProcessError:
             pysradb_attempts -= 1
-    ## check to see if pysradb_output is meaningful, if not return NA.
-    if not pysra_command_worked:
-        return "NA"
+    ## initialize an empty list of run_ids for this sra_id.
+    run_accessions = list()
+    ## check to see if pysradb_output is meaningful.
+    if pysra_command_worked:
+        pysradb_output_str = pysradb_output.decode('utf-8')
+        # Splits the metadata of the SRA ID into respective rows. 
+        # And isolates the rows that use the Illumina instrument.
+        rows = pysradb_output_str.strip().split('\n')
+        ## the Run_ID is the 3rd field from the end.
+        run_accessions = [row.split("\t")[-3] for row in rows if ("Illumina") in row and ("WGS") in row]
+    return(run_accessions)
+
+
+def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_outfile):
     
-    pysradb_output_str = pysradb_output.decode('utf-8')
-    # Splits the metadata of the SRA ID into respective rows. 
-    # And isolates the rows that use the Illumina instrument.
-    rows = pysradb_output_str.strip().split('\n')
-    filtered_rows = [row for row in rows if ("Illumina") in row and ("WGS") in row]
-    #print(filtered_rows)
-    rows_with_keyword_str = str(filtered_rows)
-    # Selects the run accession by looking for the starting pattern of the ID.
-    pattern = r"SRR\d+|ERR\d+|DRR\d+"
-    matching_run_accession = re.findall(pattern, rows_with_keyword_str)
-    if any (matching_run_accession):
-        run_accession = matching_run_accession[0]
-    else:
-        run_accession = "NA"
-    return(run_accession)
-
-
-def create_RefSeq_SRA_RunID_table(RefSeq_list_file, assembly_list_file, table_outfile):
-    with open(RefSeq_list_file, "r") as RefSeq_list_file_obj:
-        refseq_ids = RefSeq_list_file_obj.read().splitlines()
-    with open(assembly_list_file, "r") as assembly_list_file_obj:
-        assembly_ids = assembly_list_file_obj.read().splitlines()
-    with open(table_outfile, "w") as table_outfile_obj:
-        header = "RefSeq_ID,Assembly_ID,SRA_ID,Run_accession_ID\n"
-        table_outfile_obj.write(header) 
-        for i, RefSeq_accession in enumerate(refseq_ids):
+    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
+        prok_with_plasmids_lines = prok_with_plasmids_file_obj.read().splitlines()
+        ## skip the header.
+        prok_with_plasmids_data = prok_with_plasmids_lines[1:]
+        ## get the right column (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
+        refseq_id_column = [line.split("\t")[-5].replace("GCA", "GCF") for line in prok_with_plasmids_data]
+        ## filter for valid IDs (some rows have a '-' as a blank placeholder).
+        refseq_ids = [x for x in refseq_id_column if x.startswith("GCF")]
+    ## now make the RunID csv file.
+    with open(RunID_table_outfile, "w") as RunID_table_outfile_obj:
+        header = "RefSeq_ID,SRA_ID,Run_ID\n"
+        RunID_table_outfile_obj.write(header) 
+        for RefSeq_accession in refseq_ids:
             my_SRA_ID = get_SRA_ID_from_RefSeqID(RefSeq_accession)
-            if my_SRA_ID == "NA":
-                my_run_ID = "NA"
-            else:
-                my_run_ID = get_run_ID(my_SRA_ID)
-                print(my_run_ID)
-            assembly_id = assembly_ids[i] if i < len(assembly_ids) else "NA"
-            row = f"{RefSeq_accession},{assembly_id},{my_SRA_ID},{my_run_ID}\n"
-            table_outfile_obj.write(row)
+            if my_SRA_ID == "NA": continue ## skip genomes without SRA data.
+            Run_IDs = get_Run_IDs(my_SRA_ID)
+            for my_Run_ID in Run_IDs:
+                row = f"{RefSeq_accession},{my_SRA_ID},{my_Run_ID}\n"
+                print(row) ## just to show that the program is running properly.
+                RunID_table_outfile_obj.write(row)
     return
 
 
-def fetch_gbk(table_outfile, ftp_path_file):
-    refseq_ids = []
-    asm_ids = []
-    list_of_ftp_paths =[]
-    with open(table_outfile, "r") as table_obj_csv:
-        table_csv = csv.DictReader(table_obj_csv)
-        for row in table_csv:
-            run_accession_id = row["Run_accession_ID"]
-            if run_accession_id != "NA":
-                refseq_ids.append(row["RefSeq_ID"])
-                asm_ids.append(row["Assembly_ID"])
-    
-    num_paths = 0          
-    for refseq_accession, assembly_accession in zip(refseq_ids, asm_ids):
-        ftp_path = convert_ids_to_path(refseq_accession, assembly_accession)
-        if ftp_path not in list_of_ftp_paths:  # Add path if it's not already in the list
-            list_of_ftp_paths.append(ftp_path)
-            num_paths += 1
+def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
+    refseq_accession_to_ftp_path_dict = dict()
+    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
+        for i, line in enumerate(prok_with_plasmids_file_obj):
+            if i == 0: continue ## skip the header.
+            ## get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
+            refseq_id = line.split("\t")[-5].replace("GCA", "GCF")        
+            ## get the ftp_url field (3rd from end) and make sure that we turn the GCA Genbank URL
+            ## into the GCF RefSeq FTP URL.
+            ftp_url = line.split("\t")[-3].replace("GCA", "GCF")
+            ## check for for valid IDs and URLs (some rows have a '-' as a blank placeholder).
+            if refseq_id.startswith("GCF") and refseq_id in ftp_url:
+                refseq_accession_to_ftp_path_dict[refseq_id] = ftp_url
+    return refseq_accession_to_ftp_path_dict
 
-    with open(ftp_path_file, "w") as file:
-        for path in list_of_ftp_paths:
-            file.write(f"{path}\n")
-    
-    with open(ftp_path_file, "r") as ftp_path_list:
-        ftp_paths = ftp_path_list.read().splitlines()
+
+def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+    with open(md5_file, "r") as checksum_fh:
+        target_string = "_genomic.gbff.gz"
+        for line in checksum_fh:
+            if target_string in line:          
+                my_target_checksum, my_target_filename = line.strip().split()
+                break
+    if sys.platform == "darwin":
+        my_md5_cmd = "md5" ## run md5 on my mac,
+    elif sys.platform == "linux":
+        my_md5_cmd = "md5sum" ## but run md5sum on DCC (linux)
+    else:
+        raise AssertionError("UNKNOWN PLATFORM")
+    ## run md5 on the local file and get the output.
+    md5_call = subprocess.run([my_md5_cmd, gbff_gz_file], capture_output=True, text=True)
+    my_md5_checksum = md5_call.stdout.split("=")[-1].strip()
+    ## verify that the checksums match.
+    return my_md5_checksum == my_target_checksum
+
+
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir):
+    ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
+    ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
+
+    with open(RunID_table_file, "r") as RunID_file_obj:
+        RunID_table_lines = RunID_file_obj.read().splitlines()
+
+    ## remove the header from the imported data.
+    RunID_table_data = RunID_table_lines[1:]
+    ## get the first column to get all refseq_ids of interest.
+    refseq_ids = [line.split(",")[0] for line in RunID_table_data]
+    ## now look up the FTP URLs for each refseq id.
+    ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
     for ftp_path in ftp_paths:
+        ## note that the format of this accession is {refseqid}_{assemblyid}.
+        my_full_accession = basename(ftp_path)
+        my_base_filename = my_full_accession + "_genomic.gbff.gz"
+        ## files on the NCBI FTP site to download
+        gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
+        md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
+        ## local paths to download these files
+        gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
+        md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
         
-        gbk_ftp_path = ftp_path + '/' + basename(ftp_path) + "_genomic.gbff.gz"
-        gbff_gz_fname = "../data/NCBI-reference-genomes/" + basename(ftp_path) + "_genomic.gbff.gz"
-        gbff_fname = "../data/NCBI-reference-genomes/" + basename(ftp_path) + "_genomic.gbff"
-        checksum_file = ftp_path + '/' + "md5checksums.txt"
-        my_base_filename = basename(ftp_path) + "_genomic.gbff.gz"
-        md5_file_path = "../data/NCBI-reference-genomes/" + my_base_filename + "_checksums.txt"
-        
-        if exists(gbff_fname):
-            continue
-        
-        gbk_fetch_attempts = 5
-        gbk_not_fetched = True
-        while gbk_not_fetched and gbk_fetch_attempts:
-            try:
-                urllib.request.urlretrieve(gbk_ftp_path, filename=gbff_gz_fname)
-                urllib.request.urlretrieve(checksum_file, filename=md5_file_path)           
-                gbk_not_fetched = False  # assume success if the previous line worked,
-                gbk_fetch_attempts = 0  # and don't try again.
-            except urllib.error.URLError:
-                # if some problem happens, try again.
-                gbk_fetch_attempts -= 1
-                if exists(gbff_gz_fname):
-                    # delete the corrupted file if it exists.
-                    os.remove(gbff_gz_fname)
-                            
-    
-        with open(md5_file_path, "r") as checksum_fh:
-            target_string = "_genomic.gbff.gz"
-            for line in checksum_fh:
-                if target_string in line:
-                    isolated_line = line.strip()
-            
-                    my_checksum, my_base_filename = isolated_line.split()
-                    my_checksum_ncbi = my_checksum.split("./")[0].strip()
-                    print(my_checksum_ncbi)
-            
-            # run md5 on my_file_path, using the directory for the checksum file,
-            # and get the output.
-            md5_call = subprocess.run(["md5sum", gbff_gz_fname], capture_output=True, text=True)
-            #Needs to be md5sum for DCC, but md5 for locally on zsh.
-            my_md5_checksum = md5_call.stdout.split("=")[-1].strip()
-            print(my_md5_checksum)
-            ## verify that the checksums match.
-            if (my_md5_checksum == my_checksum_ncbi):
-                print(my_md5_checksum, "matches", my_checksum_ncbi)
+        if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
+            if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                continue
             else:
-                error_message = "ERROR: " + my_md5_checksum + " does not match " + my_checksum_ncbi + " for file " + gbff_gz_fname
-                #raise AssertionError(error_message)
-                #It raised the error for me even though they matched
+                os.remove(gbff_gz_file)
+                os.remove(md5_file)
+        
+        gbff_fetch_attempts = 5
+        gbff_fetched = False
+        
+        while not gbff_fetched and gbff_fetch_attempts:
+            try:
+                urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
+                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)                
+            except urllib.error.URLError:
+                ## if some problem happens, try again.
+                gbff_fetch_attempts -= 1
+                ## delete the corrupted files if they exist.
+                if exists(gbff_gz_file):
+                    os.remove(gbff_gz_file)
+                if exists(md5_file):
+                    os.remove(md5_file)
+            ## if we are here, then assume the try block worked.
+            if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
+                if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                    gbff_fetched = True  ## assume success if the previous lines worked,
+                    gbff_fetch_attempts = 0  ## and don't try again.
+                else:
+                    os.remove(gbff_gz_file)
+                    os.remove(md5_file)
     return
  
         
@@ -540,10 +545,15 @@ def tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file):
 ################################################################################
 
 def pipeline_main():
-    RefSeq_list_file = "../data/ncbidataset_refseq.txt"
-    assembly_list_file = ("../data/ncbidataset_assembly.txt")
-    ftp_path_file = ("../results/ftp_path.txt")
-    table_outfile = "../results/runID_table.txt"
+
+    run_log_file = "../results/PCN-pipeline-log.txt"
+    ## Configure logging
+    logging.basicConfig(filename=run_log_file, level=logging.INFO)
+    
+    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-plasmids.txt"
+    RunID_table_file = "../results/RunID_table.txt"
+    reference_genome_dir = "../data/NCBI-reference-genomes/"
+    
     SRA_data_dir = "../results/SRA/"
     refgenomes_dir = "../results/ref_genomes/"
     kallisto_ref_dir = "../results/kallisto_references/"
@@ -553,18 +563,39 @@ def pipeline_main():
     copy_number_csv_file = "../results/chromosome_plasmid_copy_numbers.csv"
     ARG_copy_number_csv_file = "../results/ARG_copy_numbers.csv"
     replicon_length_csv_file = "../results/replicon_lengths.csv"
-    
-    create_RefSeq_SRA_RunID_table(RefSeq_list_file, assembly_list_file, table_outfile)
-    fetch_gbk(table_outfile, ftp_path_file)
-    create_genome_metadatacsv(ftp_path_file, table_outfile, genome_metadatacsv)
-    NCBI_genomeID_to_SRA_ID_dict = make_genome_to_SRA_dict(genome_metadatacsv)
-    download_fastq_reads(SRA_data_dir, genome_metadatacsv)
-    make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_dir)
-    make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
-    run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
-    measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
-    measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
-    tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file)
+
+    ## Stage 1: get SRA IDs and Run IDs for all complete RefSeq bacterial genomes with plasmids.
+    if exists(RunID_table_file):
+        Stage1DoneMessage = f"{RunID_table_file} exists on disk-- skipping stage 1."
+        print(Stage1DoneMessage)
+        logging.info(Stage1DoneMessage)
+    else: ## This takes 34513 seconds (9.5h) to get RunIDs for 4921 genomes.
+        RunID_table_start_time = time.time()  # Record the start time
+        create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_file)
+        RunID_table_end_time = time.time()  # Record the end time
+        RunID_table_execution_time = RunID_table_end_time - RunID_table_start_time
+        Stage1TimeMessage = f"Stage 1 execution time: {RunID_table_execution_time} seconds"
+        print(Stage1TimeMessage)
+        logging.info(Stage1TimeMessage)
+
+    ## Stage 2: download reference genomes for each of the bacterial genomes containing plasmids,
+    ## for which we can download Illumina reads from the NCBI Short Read Archive.
+    ## first, make a dictionary from RefSeq accessions to ftp paths using the
+    ## prokaryotes-with-plasmids.txt file.
+    refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
+    ## now download the reference genomes.
+    fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir)
+
+    ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
+    ##create_genome_metadatacsv(ftp_path_file, table_outfile, genome_metadatacsv)
+    ##NCBI_genomeID_to_SRA_ID_dict = make_genome_to_SRA_dict(genome_metadatacsv)
+    ##download_fastq_reads(SRA_data_dir, genome_metadatacsv)
+    ##make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_dir)
+    ##make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
+    ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
+    ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
+    ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
+    ##tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file)
     return
 
 

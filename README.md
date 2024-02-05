@@ -7,6 +7,13 @@
 
 #### The files needed to run the program with are found in the data folder (ncbidataset_assembly and ncbidataset_refseq). The data from these files were obtained by downloading a list of all sequenced baterial genome from https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon=2&assembly_level=3%3A3. The ref seq and assembly ID columns were isolated. In each file, there are 36,623 samples.
 
+#### data/plasmids.txt was downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/plasmids.txt
+#### data/prokaryotes.txt was downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+
+#### data/prokaryotes-with-plasmids.txt was generated with the following command (run from src/ directory):  
+(head -n 1 ../data/prokaryotes.txt && grep "plasmid" ../data/prokaryotes.txt) > ../results/prokaryotes-with-plasmids.txt
+
+
 ### Expected Output:
 #### The first steps of this pipeline, convert these sample IDs into run accession IDs and create the reference genome path. Two txt files, a table with run accession IDs and a list of the genome paths  will be created. Then, the sample's reference genome will be downloaded if a run accession ID is present, these genomes will be downloaded into the ref-genomes folder in results. There should be 8,612 genomes downloaded, as that is the number of samples that have a run ID.
 #### A metadata csv is then created, a master list of all the samples were are downloading data for. Next, fastq files are downloaded for each run ID and put into the SRA folder in results.
