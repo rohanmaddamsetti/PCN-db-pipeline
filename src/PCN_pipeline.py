@@ -75,7 +75,6 @@ def get_Run_IDs(sra_id):
 
 
 def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_outfile):
-    
     ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         prok_with_plasmids_lines = prok_with_plasmids_file_obj.read().splitlines()
@@ -587,9 +586,11 @@ def pipeline_main():
     fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir)
 
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
-    ##create_genome_metadatacsv(ftp_path_file, table_outfile, genome_metadatacsv)
     ##NCBI_genomeID_to_SRA_ID_dict = make_genome_to_SRA_dict(genome_metadatacsv)
     ##download_fastq_reads(SRA_data_dir, genome_metadatacsv)
+
+    ##create_genome_metadatacsv(ftp_path_file, table_outfile, genome_metadatacsv)
+
     ##make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_dir)
     ##make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
     ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
