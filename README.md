@@ -36,5 +36,8 @@
 #### alternatively, install a pre-built binary of SRA-Toolkit on your machine from here: https://github.com/ncbi/sra-tools
 
 ### This will take ~2 weeks to run on DCC.
+
+### The Illumina data download (stage 3) takes 281 hours (12 days) to download 15 TB of raw sequencing data from NCBI Short Read Archive (SRA).  
+
 ### sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
-#### Use .../work, as multiple terabytes will be downloaded.
+#### Use .../work, as ~15 terabytes will be downloaded.

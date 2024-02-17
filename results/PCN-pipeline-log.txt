@@ -1,0 +1,11 @@
+INFO:root:Stage 1 execution time: 34512.33447289467 seconds
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.txt exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
