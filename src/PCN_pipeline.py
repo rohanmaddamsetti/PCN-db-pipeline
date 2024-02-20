@@ -578,12 +578,19 @@ def pipeline_main():
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
 
+    ## Stage 4:
+            
     ##make_NCBI_fasta_refs_for_kallisto(reference_genome_dir, kallisto_ref_dir)
     ##make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
     ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
     ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
     ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
     ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+
+    ## TODO: make a table of the estimated copy number and position for all genes in all chromosomes
+    ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
+    ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
+
     return
 
 
