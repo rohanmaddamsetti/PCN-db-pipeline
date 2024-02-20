@@ -231,11 +231,13 @@ def download_fastq_reads(SRA_data_dir, RunID_table_file):
 
 
 def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
+    print("making as output: ", outfile)
+    print("reading in as input:", gbk_gz_path)
     with open(outfile, "w") as outfh:
-        with open(gbk_gz_path,'rt') as gbk_fh:
+        with gzip.open(gbk_gz_path, 'rt') as gbk_gz_fh:
             SeqID = None
             SeqType = None
-            for i, record in enumerate(SeqIO.parse(gbk_fh, "genbank")):
+            for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
                 SeqID = record.id
                 if "complete" in record.description:
                     if "plasmid" in record.description:
@@ -262,12 +264,10 @@ def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
 
 def make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):    
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
-    print(gzfilelist)
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
         genome_id = gzfile.split(".gbff")[0]
         fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
-        print("making: ", fasta_outfile)
         generate_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
 
@@ -577,19 +577,47 @@ def pipeline_main():
         with open(stage_3_complete_file, "w") as stage_3_complete_log:
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
+    ## Stage 4: Make FASTA reference files for copy number estimation for genes in each genome using kallisto.
+    stage_4_complete_file = "../results/stage4.done"
+    if exists(stage_4_complete_file):
+        print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
+    else:
+        make_fasta_ref_start_time = time.time()  # Record the start time
+        make_NCBI_fasta_refs_for_kallisto(reference_genome_dir, kallisto_ref_dir)
+        make_fasta_ref_end_time = time.time()  # Record the end time
+        make_fasta_ref_execution_time = make_fasta_ref_end_time - make_fasta_ref_start_time
+        Stage4TimeMessage = f"Stage 4 (making FASTA references for kallisto) execution time: {make_fasta_ref_execution_time} seconds"
+        print(Stage4TimeMessage)
+        logging.info(Stage4TimeMessage)
+        with open(stage_4_complete_file, "w") as stage_4_complete_log:
+            stage_4_complete_log.write("FASTA reference sequences for kallisto finished successfully.\n")
 
-    ## Stage 4:
-            
-    ##make_NCBI_fasta_refs_for_kallisto(reference_genome_dir, kallisto_ref_dir)
-    ##make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
+    ## Stage 5: Make kallisto index files for each genome.
+    stage_5_complete_file = "../results/stage5.done"
+    if exists(stage_5_complete_file):
+        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
+    else:
+        make_kallisto_index_start_time = time.time()  # Record the start time
+        make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
+        make_kallisto_index_end_time = time.time()  # Record the end time
+        make_kallisto_index_execution_time = make_kallisto_index_end_time - make_kallisto_index_start_time
+        Stage5TimeMessage = f"Stage 5 (making indices for kallisto) execution time: {make_fasta_ref_execution_time} seconds"
+        print(Stage5TimeMessage)
+        logging.info(Stage5TimeMessage)
+        with open(stage_5_complete_file, "w") as stage_5_complete_log:
+            stage_5_complete_log.write("kallisto index file construction finished successfully.\n")
+
+
     ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
-    ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
-    ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
-    ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
 
     ## TODO: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
     ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
+
+    ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
+    ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
+    ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+
 
     return
 
