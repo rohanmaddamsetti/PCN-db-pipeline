@@ -4,6 +4,8 @@
 PCN_pipeline.py by Maggie Wilson and Rohan Maddamsetti.
 
 For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $PATH.
+On DCC, run the following to get these programs into the path:
+conda activate PCNdb-env
 
 Currently, this pipeline only analyzes Illumina short-read data with kallisto.
 
@@ -13,7 +15,6 @@ state-of-the-art in pseudoalignment analyses, Themisto (published 2023 in Bioinf
 """
 
 import subprocess
-import argparse
 import json
 import os
 import sys
@@ -25,6 +26,8 @@ from os.path import basename, exists
 import urllib.request
 import time
 import logging
+import glob
+import pprint
 
 
 ################################################################################
@@ -266,7 +269,7 @@ def make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
-        genome_id = gzfile.split(".gbff")[0]
+        genome_id = gzfile.split(".gbff.gz")[0]
         fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
         generate_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
@@ -284,37 +287,46 @@ def make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
     return
 
 
-def run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, results_dir):
+def run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_index_dir, SRA_data_dir, results_dir):
+    ## IMPORTANT: kallisto needs -l -s parameters supplied when run on single-end data.
+    ## to avoid this complexity, I only process paired-end Illumina data, and skip single-end data altogether.
     index_list = [x for x in os.listdir(kallisto_index_dir) if x.endswith(".idx")]
     for index_file in index_list:
         index_path = os.path.join(kallisto_index_dir, index_file)
         genome_id = index_file.split(".idx")[0]
-        SRA_id = NCBI_genomeID_to_SRA_ID_dict[genome_id]
-        if SRA_id == "NA":
-            continue
-        else:
-            read_file1 = SRA_id + "_1.fastq"
-            read_file2 = SRA_id + "_2.fastq"
-            read_path1 = os.path.join(SRA_data_dir, read_file1)
-            read_path2 = os.path.join(SRA_data_dir, read_file2)
-            output_path = os.path.join(results_dir, genome_id)
-            ## run with 10 threads by default.
-            kallisto_quant_args = ["kallisto", "quant", "-t", "8", "-i", index_path, "-o", output_path, "-b", "100", read_path1, read_path2]
-            ##print(" ".join(kallisto_quant_args))
-            subprocess.run(kallisto_quant_args)
+        refseq_id = "_".join(genome_id.split("_")[:2])
+        Run_ID_list = RefSeq_to_SRA_RunList_dict[refseq_id]
+        ## make read_path_arg_list.
+        read_path_arg_list = list()
+        for Run_ID in Run_ID_list:
+            SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
+            matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
+            if len(matched_fastq_list) != 2: ## skip if we didn't find paired fastq reads.
+                continue
+            read_path_arg_list += matched_fastq_list
+        ## run kallisto quant with 10 threads by default.
+        output_path = os.path.join(results_dir, genome_id)
+        if len(read_path_arg_list): ## if we found paired-end fastq reads for this genome, then run kallisto.
+            kallisto_quant_args = ["kallisto", "quant", "-t", "10", "-i", index_path, "-o", output_path, "-b", "100"] + read_path_arg_list
+            kallisto_quant_string = " ".join(kallisto_quant_args)
+            slurm_string = "sbatch -p youlab --mem=16G --wrap=" + "\"" + kallisto_quant_string + "\""
+            print(slurm_string)
+            subprocess.run(slurm_string, shell=True)
     return
 
 
-def make_genome_to_SRA_dict(NCBI_metadata_csv):
-    genome_to_SRA_dict = dict()
-    with open(NCBI_metadata_csv, "r") as csv_fh:
+def make_RefSeq_to_SRA_RunList_dict(RunID_table_csv):
+    RefSeq_to_SRA_RunList_dict = dict()
+    with open(RunID_table_csv, "r") as csv_fh:
         for i, line in enumerate(csv_fh):
             if i == 0: continue ## skip the header.
             line = line.strip() 
-            ReferenceGenome, SRA_Data = line.split(',')
-            genome_id = ReferenceGenome.split(".gbff.gz")[0]
-            genome_to_SRA_dict[genome_id] = SRA_Data
-    return genome_to_SRA_dict
+            RefSeqID, SRA_ID, RunID = line.split(',')
+            if RefSeqID in RefSeq_to_SRA_RunList_dict:
+                RefSeq_to_SRA_RunList_dict[RefSeqID].append(RunID)
+            else:
+                RefSeq_to_SRA_RunList_dict[RefSeqID] = [RunID]
+    return RefSeq_to_SRA_RunList_dict
 
 
 def parse_metadata_in_header(target_id):
@@ -522,7 +534,7 @@ def pipeline_main():
     logging.basicConfig(filename=run_log_file, level=logging.INFO)
     
     prokaryotes_with_plasmids_file = "../results/prokaryotes-with-plasmids.txt"
-    RunID_table_file = "../results/RunID_table.csv"
+    RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
     
@@ -535,13 +547,13 @@ def pipeline_main():
     replicon_length_csv_file = "../results/replicon_lengths.csv"
 
     ## Stage 1: get SRA IDs and Run IDs for all complete RefSeq bacterial genomes with plasmids.
-    if exists(RunID_table_file):
-        Stage1DoneMessage = f"{RunID_table_file} exists on disk-- skipping stage 1."
+    if exists(RunID_table_csv):
+        Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
         logging.info(Stage1DoneMessage)
     else: ## This takes 34513 seconds (9.5h) to get RunIDs for 4921 genomes.
         RunID_table_start_time = time.time()  # Record the start time
-        create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_file)
+        create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv)
         RunID_table_end_time = time.time()  # Record the end time
         RunID_table_execution_time = RunID_table_end_time - RunID_table_start_time
         Stage1TimeMessage = f"Stage 1 execution time: {RunID_table_execution_time} seconds"
@@ -558,7 +570,7 @@ def pipeline_main():
     else:
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
         ## now download the reference genomes.
-        fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir)
+        fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir)
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
         
@@ -568,7 +580,7 @@ def pipeline_main():
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
         SRA_download_start_time = time.time()  # Record the start time
-        download_fastq_reads(SRA_data_dir, RunID_table_file)
+        download_fastq_reads(SRA_data_dir, RunID_table_csv)
         SRA_download_end_time = time.time()  # Record the end time
         SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
         Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds"
@@ -601,15 +613,29 @@ def pipeline_main():
         make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
         make_kallisto_index_end_time = time.time()  # Record the end time
         make_kallisto_index_execution_time = make_kallisto_index_end_time - make_kallisto_index_start_time
-        Stage5TimeMessage = f"Stage 5 (making indices for kallisto) execution time: {make_fasta_ref_execution_time} seconds"
+        Stage5TimeMessage = f"Stage 5 (making indices for kallisto) execution time: {make_kallisto_index_execution_time} seconds"
         print(Stage5TimeMessage)
         logging.info(Stage5TimeMessage)
         with open(stage_5_complete_file, "w") as stage_5_complete_log:
             stage_5_complete_log.write("kallisto index file construction finished successfully.\n")
 
-
-    ##run_kallisto_quant(NCBI_genomeID_to_SRA_ID_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
-
+    ## Stage 6: run kallisto quant on all genome data.
+    ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
+    stage_6_complete_file = "../results/stage6.done"
+    if exists(stage_6_complete_file):
+        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
+    else:
+        kallisto_quant_start_time = time.time()  # Record the start time
+        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
+        kallisto_quant_end_time = time.time()  # Record the end time
+        kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
+        Stage6TimeMessage = f"Stage 6 (kallisto quant) execution time: {kallisto_quant_execution_time} seconds"
+        print(Stage6TimeMessage)
+        logging.info(Stage6TimeMessage)
+        with open(stage_6_complete_file, "w") as stage_6_complete_log:
+            stage_6_complete_log.write("kallisto quant finished successfully.\n")
+    
     ## TODO: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
     ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.

@@ -9,3 +9,5 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 6 (kallisto quant) execution time: 0.004641056060791016 seconds
