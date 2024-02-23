@@ -635,11 +635,27 @@ def pipeline_main():
         logging.info(Stage6TimeMessage)
         with open(stage_6_complete_file, "w") as stage_6_complete_log:
             stage_6_complete_log.write("kallisto quant finished successfully.\n")
-    
-    ## TODO: make a table of the estimated copy number and position for all genes in all chromosomes
+
+    ## Stage 7: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
     ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
+    stage_7_complete_file = "../results/stage7.done"
+    if exists(stage_7_complete_file):
+        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
+    else:
+        stage7_start_time = time.time()  # Record the start time
 
+        ## STAGE 7 FUNCTION CALL GOES HERE.
+
+        stage7_end_time = time.time()  # Record the end time
+        stage7_execution_time = stage7_end_time - stage7_start_time
+        Stage7TimeMessage = f"Stage 7 (tabulate results) execution time: {stage7_execution_time} seconds"
+        print(Stage7TimeMessage)
+        logging.info(Stage7TimeMessage)
+        with open(stage_7_complete_file, "w") as stage_7_complete_log:
+            stage_7_complete_log.write("stage 7 (tabulating results) finished successfully.\n")
+
+    
     ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
     ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
     ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
