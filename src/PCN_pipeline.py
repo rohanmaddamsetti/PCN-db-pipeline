@@ -413,100 +413,6 @@ def measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_c
     return
 
 
-def isARG(product_annotation):
-    chloramphenicol_keywords = "chloramphenicol|Chloramphenicol"
-    tetracycline_keywords = "tetracycline efflux|Tetracycline efflux|TetA|Tet(A)|tetA|tetracycline-inactivating"
-    MLS_keywords = "macrolide|lincosamide|streptogramin"
-    multidrug_keywords = "Multidrug resistance|multidrug resistance|antibiotic resistance"
-    beta_lactam_keywords = "lactamase|LACTAMASE|beta-lactam|oxacillinase|carbenicillinase|betalactam\S*"
-    glycopeptide_keywords = "glycopeptide resistance|VanZ|vancomycin resistance|VanA|VanY|VanX|VanH|streptothricin N-acetyltransferase"
-    polypeptide_keywords = "bacitracin|polymyxin B|phosphoethanolamine transferase|phosphoethanolamine--lipid A transferase"
-    diaminopyrimidine_keywords = "trimethoprim|dihydrofolate reductase|dihydropteroate synthase"
-    sulfonamide_keywords = "sulfonamide|Sul1|sul1|sulphonamide"
-    quinolone_keywords = "quinolone|Quinolone|oxacin|qnr|Qnr"
-    aminoglycoside_keywords = "Aminoglycoside|aminoglycoside|streptomycin|Streptomycin|kanamycin|Kanamycin|tobramycin|Tobramycin|gentamicin|Gentamicin|neomycin|Neomycin|16S rRNA (guanine(1405)-N(7))-methyltransferase|23S rRNA (adenine(2058)-N(6))-methyltransferase|spectinomycin 9-O-adenylyltransferase|Spectinomycin 9-O-adenylyltransferase|Rmt"
-    macrolide_keywords = "macrolide|ketolide|Azithromycin|azithromycin|Clarithromycin|clarithromycin|Erythromycin|erythromycin|Erm|EmtA"
-    antimicrobial_keywords = "QacE|Quaternary ammonium|quaternary ammonium|Quarternary ammonium|quartenary ammonium|fosfomycin|ribosomal protection|rifampin ADP-ribosyl|azole resistance|antimicrob\S*"
-    ARG_regex = "|".join([chloramphenicol_keywords, tetracycline_keywords,
-                          MLS_keywords, multidrug_keywords, beta_lactam_keywords,
-                          glycopeptide_keywords, polypeptide_keywords, diaminopyrimidine_keywords,
-                          sulfonamide_keywords, quinolone_keywords, aminoglycoside_keywords,
-                          macrolide_keywords, antimicrobial_keywords])
-    if re.search(ARG_regex, product_annotation): return True
-    return False
-
-
-def estimate_ARG_copy_numbers(genecount_tsv_path):
-
-    chromosomal_gene_length = 0.0
-    chromosomal_gene_est_counts = 0.0
-
-    ARG_coverage_dict = dict()
-    ## get the chromosomal gene coverage, and get the coverage for all ARGs.
-    with open(genecount_tsv_path, "r") as in_fh:
-        for i, line in enumerate(in_fh):
-            if i == 0: continue ## skip header
-            target_id, length, eff_length, est_counts, tpm = line.split("\t")
-            SeqID, SeqType, locus_tag, product = parse_metadata_in_header(target_id)
-            if SeqType == "chromosome":
-                chromosomal_gene_length += float(length)
-                chromosomal_gene_est_counts += float(est_counts)
-            if isARG(product):
-                coverage = float(est_counts) / float(length)
-                ARG_coverage_dict[locus_tag] = (SeqID, SeqType, product, coverage)
-    ## NOTE: GCF_026154285.1_ASM2615428v1 did not have any reads pseudoalign.
-    ## Return an empty dict() when nothing aligns to the chromosome.
-    if chromosomal_gene_length == 0:
-        print("WARNING: no reads pseudoaligned in file: ", genecount_tsv_path)
-        print("estimate_ARG_copy_numbers is returning an empty dict.")
-        return(dict())
-    chromosome_coverage = chromosomal_gene_est_counts/chromosomal_gene_length
-    ## now normalize by chromosome coverage to get copy number estimates.
-    ARG_copy_number_dict = dict()
-    for locus_tag, value_tuple in ARG_coverage_dict.items():
-        my_SeqID, my_SeqType, my_product, my_coverage = value_tuple
-        ARG_copy_number_dict[locus_tag] = (my_SeqID, my_SeqType, my_product, my_coverage/chromosome_coverage)
-    return(ARG_copy_number_dict)
-
-
-def measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file):
-    """
-    define lists to encode the following columns of the table.
-    AnnotationAccession, SeqID, SeqType, locus_tag, product, CopyNumber
-    """
-    AnnotationAccessionVec = []
-    SeqIDVec = [] ## this is for the replicon.
-    SeqTypeVec = []
-    LocusTagVec = []
-    ProductVec = []
-    CopyNumberVec = []
-    
-    ## skip .DS_Store and any other weird files.
-    genomedirectories = [x for x in os.listdir(kallisto_quant_results_dir) if x.startswith("GCF")]
-    for genomedir in genomedirectories:
-        ## I probably should have trimmed the '_genomic' suffix in an earlier step.
-        annotation_accession = genomedir.split("_genomic")[0]
-        genome_quantfile_path = os.path.join(kallisto_quant_results_dir, genomedir, "abundance.tsv")
-        ARG_copy_number_dict = estimate_ARG_copy_numbers(genome_quantfile_path)
-        for locus_tag, value_tuple in ARG_copy_number_dict.items():
-            SeqID, seqtype, product, copy_number = value_tuple
-            AnnotationAccessionVec.append(annotation_accession)
-            SeqIDVec.append(SeqID)
-            SeqTypeVec.append(seqtype)
-            LocusTagVec.append(locus_tag)
-            ProductVec.append(product)
-            CopyNumberVec.append(copy_number)
-
-    assert len(AnnotationAccessionVec) == len(SeqIDVec) == len(SeqTypeVec) == len(LocusTagVec) == len(ProductVec) == len(CopyNumberVec)
-    ## now write the ARG copy number data to file.
-    with open(ARG_copy_number_csv_file, "w") as outfh:
-        header = "AnnotationAccession,SeqID,SeqType,locus_tag,product,CopyNumber"
-        outfh.write(header + "\n")
-        for i in range(len(AnnotationAccessionVec)):
-            outfh.write(AnnotationAccessionVec[i] + "," + SeqIDVec[i] + "," + SeqTypeVec[i] + "," + LocusTagVec[i] + "," + ProductVec[i] + "," + str(CopyNumberVec[i]) + "\n")
-    return
-
-
 def estimate_gene_copy_numbers(genecount_tsv_path):
 
     chromosomal_gene_length = 0.0
@@ -725,7 +631,6 @@ def pipeline_main():
 
     
     ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
-    ##measure_NCBI_ARG_copy_numbers(kallisto_quant_results_dir, ARG_copy_number_csv_file)
     ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
 
 
