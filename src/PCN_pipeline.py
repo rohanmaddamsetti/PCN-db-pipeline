@@ -511,10 +511,9 @@ def pipeline_main():
     kallisto_index_dir = "../results/kallisto_indices/"
     kallisto_quant_results_dir = "../results/kallisto_quant/"
 
-    gene_copy_number_csv_file = "../results/gene_copy_numbers.csv"
-    copy_number_csv_file = "../results/chromosome_plasmid_copy_numbers.csv"
-    ARG_copy_number_csv_file = "../results/ARG_copy_numbers.csv"
-    replicon_length_csv_file = "../results/replicon_lengths.csv"
+    gene_copy_number_csv_file = "../results/NCBI-gene_copy_numbers.csv"
+    copy_number_csv_file = "../results/NCBI-chromosome_plasmid_copy_numbers.csv"
+    replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
     ## Stage 1: get SRA IDs and Run IDs for all complete RefSeq bacterial genomes with plasmids.
     if exists(RunID_table_csv):
