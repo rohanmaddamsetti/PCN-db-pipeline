@@ -504,6 +504,36 @@ def tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file):
     return
 
 
+def filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file):
+    ## define ARG keywords for pattern matching.
+    chloramphenicol_keywords = "chloramphenicol|Chloramphenicol"
+    tetracycline_keywords = "tetracycline efflux|Tetracycline efflux|TetA|Tet(A)|tetA|tetracycline-inactivating"
+    MLS_keywords = "macrolide|lincosamide|streptogramin"
+    multidrug_keywords = "Multidrug resistance|multidrug resistance|antibiotic resistance"
+    beta_lactam_keywords = "lactamase|LACTAMASE|beta-lactam|oxacillinase|carbenicillinase|betalactam\\S*"
+    glycopeptide_keywords = "glycopeptide resistance|VanZ|vancomycin resistance|VanA|VanY|VanX|VanH|streptothricin N-acetyltransferase"
+    polypeptide_keywords = "bacitracin|polymyxin B|phosphoethanolamine transferase|phosphoethanolamine--lipid A transferase"
+    diaminopyrimidine_keywords = "trimethoprim|dihydrofolate reductase|dihydropteroate synthase"
+    sulfonamide_keywords = "sulfonamide|Sul1|sul1|sulphonamide"
+    quinolone_keywords = "quinolone|Quinolone|oxacin|qnr|Qnr"
+    aminoglycoside_keywords = "Aminoglycoside|aminoglycoside|streptomycin|Streptomycin|kanamycin|Kanamycin|tobramycin|Tobramycin|gentamicin|Gentamicin|neomycin|Neomycin|16S rRNA (guanine(1405)-N(7))-methyltransferase|23S rRNA (adenine(2058)-N(6))-methyltransferase|spectinomycin 9-O-adenylyltransferase|Spectinomycin 9-O-adenylyltransferase|Rmt"
+    macrolide_keywords = "macrolide|ketolide|Azithromycin|azithromycin|Clarithromycin|clarithromycin|Erythromycin|erythromycin|Erm|EmtA"
+    antimicrobial_keywords = "QacE|Quaternary ammonium|quaternary ammonium|Quarternary ammonium|quartenary ammonium|fosfomycin|ribosomal protection|rifampin ADP-ribosyl|azole resistance|antimicrob\\S*"
+
+    antibiotic_keywords = "|".join([chloramphenicol_keywords, tetracycline_keywords, MLS_keywords, multidrug_keywords,
+                                    beta_lactam_keywords, glycopeptide_keywords, polypeptide_keywords, diaminopyrimidine_keywords,
+                                    sulfonamide_keywords, quinolone_keywords, aminoglycoside_keywords, macrolide_keywords, antimicrobial_keywords])
+
+    with open(gene_copy_number_csv_file, "r") as gene_fh, open(ARG_copy_number_csv_file, "w") as ARG_fh:
+        for i, line in enumerate(gene_fh):
+            if i == 0: ## dealing with the header
+                ARG_fh.write(line)
+            else:
+                if re.search(antibiotic_keywords, line):
+                    ARG_fh.write(line)
+    return
+
+
 ################################################################################
 
 def pipeline_main():
@@ -522,6 +552,7 @@ def pipeline_main():
     kallisto_quant_results_dir = "../results/kallisto_quant/"
 
     gene_copy_number_csv_file = "../results/NCBI-gene_copy_numbers.csv"
+    ARG_copy_number_csv_file = "../results/NCBI-ARG_copy_numbers.csv"
     copy_number_csv_file = "../results/NCBI-chromosome_plasmid_copy_numbers.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
@@ -623,8 +654,10 @@ def pipeline_main():
         print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
     else:
         stage7_start_time = time.time()  # Record the start time
-
+        ## first make a file containing the copy number estimates for each individual gene
         measure_NCBI_gene_copy_numbers(kallisto_quant_results_dir, gene_copy_number_csv_file)
+        ## then filter that output file for ARGs (faster to do in python than downstream in R).
+        filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file)
 
         stage7_end_time = time.time()  # Record the end time
         stage7_execution_time = stage7_end_time - stage7_start_time
