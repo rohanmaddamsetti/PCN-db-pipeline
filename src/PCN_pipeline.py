@@ -21,6 +21,7 @@ import sys
 import gzip
 import re
 import csv
+import math
 from Bio import SeqIO
 from os.path import basename, exists
 import urllib.request
@@ -363,16 +364,11 @@ def estimate_chr_plasmid_copy_numbers(genecount_tsv_path):
         if replicon_dict["SeqType"] == "chromosome":
             chromosome_coverage = coverage
             
-    
     ## now normalize by chromosome coverage to get copy number estimates.
     copy_number_dict = dict()
     for SeqID, value_tuple in coverage_dict.items():
         seqtype, coverage = value_tuple
         copy_number_dict[SeqID] = (seqtype, coverage/chromosome_coverage)
-        print(value_tuple)
-        print(seqtype)
-        print(coverage)
-        print(chromosome_coverage)
     print(copy_number_dict)
     return(copy_number_dict)
 
@@ -422,6 +418,8 @@ def estimate_gene_copy_numbers(genecount_tsv_path):
             if i == 0: continue ## skip header
             target_id, length, eff_length, est_counts, tpm = line.split("\t")
             SeqID, SeqType, locus_tag, product = parse_metadata_in_header(target_id)
+            coverage = float(est_counts) / float(length)
+            gene_coverage_dict[locus_tag] = (SeqID, SeqType, product, coverage)
             if SeqType == "chromosome":
                 chromosomal_gene_length += float(length)
                 chromosomal_gene_est_counts += float(est_counts)
@@ -431,12 +429,13 @@ def estimate_gene_copy_numbers(genecount_tsv_path):
         print("WARNING: no reads pseudoaligned to chromosome in file: ", genecount_tsv_path)
         print("estimate_gene_copy_numbers is returning an empty dict.")
         return(dict())
-    chromosome_coverage = chromosomal_gene_est_counts/chromosomal_gene_length
+    chromosome_coverage = chromosomal_gene_est_counts / chromosomal_gene_length
     ## now normalize by chromosome coverage to get copy number estimates.
     gene_copy_number_dict = dict()
     for locus_tag, value_tuple in gene_coverage_dict.items():
         my_SeqID, my_SeqType, my_product, my_coverage = value_tuple
-        gene_copy_number_dict[locus_tag] = (my_SeqID, my_SeqType, my_product, my_coverage/chromosome_coverage)
+        my_gene_copy_number = my_coverage / chromosome_coverage
+        gene_copy_number_dict[locus_tag] = (my_SeqID, my_SeqType, my_product, my_gene_copy_number)
     return(gene_copy_number_dict)
 
 
@@ -626,10 +625,39 @@ def pipeline_main():
         with open(stage_7_complete_file, "w") as stage_7_complete_log:
             stage_7_complete_log.write("stage 7 (tabulating all gene copy numbers) finished successfully.\n")
 
-    
-    ##measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
-    ##tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+    ## Stage 8: make a table of the estimated copy number for all chromosomes and plasmids.
+    stage_8_complete_file = "../results/stage8.done"
+    if exists(stage_8_complete_file):
+        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
+    else:
+        stage8_start_time = time.time()  # Record the start time
+        
+        measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
 
+        stage8_end_time = time.time()  # Record the end time
+        stage8_execution_time = stage8_end_time - stage8_start_time
+        Stage8TimeMessage = f"Stage 8 (tabulate all replicon copy numbers) execution time: {stage8_execution_time} seconds"
+        print(Stage8TimeMessage)
+        logging.info(Stage8TimeMessage)
+        with open(stage_8_complete_file, "w") as stage_8_complete_log:
+            stage_8_complete_log.write("stage 8 (tabulating all replicon copy numbers) finished successfully.\n")
+
+    ## Stage 9: tabulate the length of all chromosomes and plasmids.
+    stage_9_complete_file = "../results/stage9.done"
+    if exists(stage_9_complete_file):
+        print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
+    else:
+        stage9_start_time = time.time()  # Record the start time
+        
+        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+
+        stage9_end_time = time.time()  # Record the end time
+        stage9_execution_time = stage9_end_time - stage9_start_time
+        Stage9TimeMessage = f"Stage 9 (tabulate all replicon lengths) execution time: {stage9_execution_time} seconds"
+        print(Stage9TimeMessage)
+        logging.info(Stage9TimeMessage)
+        with open(stage_9_complete_file, "w") as stage_9_complete_log:
+            stage_9_complete_log.write("stage 9 (tabulating all replicon lengths) finished successfully.\n")
 
     return
 
