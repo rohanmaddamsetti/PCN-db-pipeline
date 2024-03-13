@@ -464,15 +464,25 @@ def measure_NCBI_gene_copy_numbers(kallisto_quant_results_dir, gene_copy_number_
             SeqTypeVec.append(seqtype)
             LocusTagVec.append(locus_tag)
             ProductVec.append(product)
-            CopyNumberVec.append(copy_number)
+            CopyNumberVec.append(str(copy_number))
 
     assert len(RefSeqIDVec) == len(SeqIDVec) == len(SeqTypeVec) == len(LocusTagVec) == len(ProductVec) == len(CopyNumberVec)
+
+    ## we have to double-quote all columns-- some fields in the product column contain commas!
+    RefSeqIDVec = ["\"" + x + "\"" for x in RefSeqIDVec]
+    SeqIDVec = ["\"" + x + "\"" for x in SeqIDVec]
+    SeqTypeVec = ["\"" + x + "\"" for x in SeqTypeVec]
+    LocusTagVec = ["\"" + x + "\"" for x in LocusTagVec]
+    ProductVec = ["\"" + x + "\"" for x in ProductVec]
+    CopyNumberVec = ["\"" + x + "\"" for x in CopyNumberVec]
+    
     ## now write the gene copy number data to file.
     with open(gene_copy_number_csv_file, "w") as outfh:
-        header = "RefSeqID,SeqID,SeqType,locus_tag,product,CopyNumber"
+        ## double-quote each column name in the header for consistency.
+        header = "\"RefSeqID\",\"SeqID\",\"SeqType\",\"locus_tag\",\"product\",\"CopyNumber\""
         outfh.write(header + "\n")
         for i in range(len(RefSeqIDVec)):
-            outfh.write(RefSeqIDVec[i] + "," + SeqIDVec[i] + "," + SeqTypeVec[i] + "," + LocusTagVec[i] + "," + ProductVec[i] + "," + str(CopyNumberVec[i]) + "\n")
+            outfh.write(RefSeqIDVec[i] + "," + SeqIDVec[i] + "," + SeqTypeVec[i] + "," + LocusTagVec[i] + "," + ProductVec[i] + "," + CopyNumberVec[i] + "\n")
     return
 
 
