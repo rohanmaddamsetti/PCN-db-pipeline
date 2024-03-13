@@ -242,14 +242,11 @@ def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
             SeqType = None
             for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
                 SeqID = record.id
-                if "complete" in record.description:
-                    if "plasmid" in record.description:
-                        SeqType = "plasmid"
-                    elif "chromosome" in record.description or i == 0:
-                        ## IMPORTANT: we assume here that the first record is a chromosome.
-                        SeqType = "chromosome"
-                    else:
-                        continue
+                if "chromosome" in record.description or i == 0:
+                    ## IMPORTANT: we assume here that the first record is a chromosome.
+                    SeqType = "chromosome"
+                elif "plasmid" in record.description:
+                    SeqType = "plasmid"
                 else:
                     continue
                 for feature in record.features:
@@ -431,7 +428,7 @@ def estimate_gene_copy_numbers(genecount_tsv_path):
     ## NOTE: GCF_026154285.1_ASM2615428v1 did not have any reads pseudoalign.
     ## Return an empty dict() when nothing aligns to the chromosome.
     if chromosomal_gene_length == 0:
-        print("WARNING: no reads pseudoaligned in file: ", genecount_tsv_path)
+        print("WARNING: no reads pseudoaligned to chromosome in file: ", genecount_tsv_path)
         print("estimate_gene_copy_numbers is returning an empty dict.")
         return(dict())
     chromosome_coverage = chromosomal_gene_est_counts/chromosomal_gene_length
