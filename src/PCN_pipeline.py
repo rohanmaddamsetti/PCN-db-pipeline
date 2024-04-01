@@ -9,8 +9,11 @@ conda activate PCNdb-env
 
 Currently, this pipeline only analyzes Illumina short-read data with kallisto.
 
-In the future, one could additionally analyze long-read data as well, by using the
-state-of-the-art in pseudoalignment analyses, Themisto (published 2023 in Bioinformatics).
+TODO: run a version of this pipeline, using the entire chromosome and entire plasmid as a 'gene' for read mapping with kallisto.
+
+TODO: use Themisto in addition to Kallisto as an internal control (should also work better).
+
+TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
 
 """
 
@@ -243,6 +246,7 @@ def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
             SeqType = None
             for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
                 SeqID = record.id
+                print("RECORD DESCRIPTION", record.description)## DEBUGGING
                 if "chromosome" in record.description or i == 0:
                     ## IMPORTANT: we assume here that the first record is a chromosome.
                     SeqType = "chromosome"
@@ -542,7 +546,7 @@ def pipeline_main():
     ## Configure logging
     logging.basicConfig(filename=run_log_file, level=logging.INFO)
     
-    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-plasmids.txt"
+    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-chromosomes-and-plasmids.txt"
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
@@ -556,7 +560,7 @@ def pipeline_main():
     copy_number_csv_file = "../results/NCBI-chromosome_plasmid_copy_numbers.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
-    ## Stage 1: get SRA IDs and Run IDs for all complete RefSeq bacterial genomes with plasmids.
+    ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
@@ -599,6 +603,7 @@ def pipeline_main():
         with open(stage_3_complete_file, "w") as stage_3_complete_log:
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
+            
     ## Stage 4: Make FASTA reference files for copy number estimation for genes in each genome using kallisto.
     stage_4_complete_file = "../results/stage4.done"
     if exists(stage_4_complete_file):
@@ -614,6 +619,7 @@ def pipeline_main():
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
             stage_4_complete_log.write("FASTA reference sequences for kallisto finished successfully.\n")
 
+            
     ## Stage 5: Make kallisto index files for each genome.
     stage_5_complete_file = "../results/stage5.done"
     if exists(stage_5_complete_file):
@@ -701,6 +707,9 @@ def pipeline_main():
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
             stage_9_complete_log.write("stage 9 (tabulating all replicon lengths) finished successfully.\n")
 
+    ## 
+
+            
     return
 
 

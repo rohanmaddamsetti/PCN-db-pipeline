@@ -9,8 +9,15 @@
 #### data/plasmids.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/plasmids.txt
 #### data/prokaryotes.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
 
-#### results/prokaryotes-with-plasmids.txt should then be generated with the following command (run from src/ directory):  
-(head -n 1 ../data/prokaryotes.txt && grep "plasmid" ../data/prokaryotes.txt) > ../results/prokaryotes-with-plasmids.txt
+#### results/prokaryotes-with-chromosomes-and-plasmids.txt should then be generated with the following command (run from src/ directory):
+(head -n 1 ../data/prokaryotes.txt && grep "plasmid" ../data/prokaryotes.txt | grep "chromosome") > ../results/prokaryotes-with-chromosomes-and-plasmids.txt  
+
+This command ensures that every genome has both an annotated chromosome and at least one annotated plasmid.
+
+SRA data for ~6000 genomes was downloaded, but only have about ~4500 reference genomes. to understand this discrepancy, I ran:
+cd ../data/NCBI-reference-genomes
+ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-genome-ids.txt
+
 
 
 ### Expected Output:

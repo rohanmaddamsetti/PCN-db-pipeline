@@ -11,3 +11,16 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:Stage 6 (kallisto quant) execution time: 0.004641056060791016 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 7 (tabulate all gene copy numbers) execution time: 88.87617778778076 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 8 (tabulate all replicon copy numbers) execution time: 38.830063819885254 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 9 (tabulate all replicon lengths) execution time: 2622.296518802643 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 7 (tabulate all gene copy numbers) execution time: 106.87283301353455 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 7 (tabulate all gene copy numbers) execution time: 351.2087070941925 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
