@@ -237,7 +237,7 @@ def download_fastq_reads(SRA_data_dir, RunID_table_file):
         return
 
 
-def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
+def generate_gene_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
     print("making as output: ", outfile)
     print("reading in as input:", gbk_gz_path)
     with open(outfile, "w") as outfh:
@@ -267,13 +267,50 @@ def generate_fasta_reference_for_kallisto(gbk_gz_path, outfile):
     return
 
 
-def make_NCBI_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):    
+def make_NCBI_gene_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
+    ## this function 
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
         genome_id = gzfile.split(".gbff.gz")[0]
         fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
-        generate_fasta_reference_for_kallisto(gzpath, fasta_outfile)
+        generate_gene_level_fasta_reference_for_kallisto(gzpath, fasta_outfile)
+    return
+
+
+def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
+    print("making as output: ", outfile)
+    print("reading in as input:", gbk_gz_path)
+    with open(outfile, "w") as outfh:
+        with gzip.open(gbk_gz_path, 'rt') as gbk_gz_fh:
+            SeqID = None
+            SeqType = None
+            for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
+                SeqID = record.id
+                print("RECORD DESCRIPTION", record.description)## DEBUGGING
+                if "chromosome" in record.description or i == 0:
+                    ## IMPORTANT: we assume here that the first record is a chromosome.
+                    SeqType = "chromosome"
+                elif "plasmid" in record.description:
+                    SeqType = "plasmid"
+                else:
+                    continue
+                ## Important: for kallisto, we need to replace spaces with underscores in the replicon annotation field.
+                replicon_description = record.description.replace(" ","_")
+                header = ">" + "|".join(["SeqID="+SeqID,"SeqType="+SeqType,"replicon="+replicon_description])
+                outfh.write(header + "\n")
+                outfh.write(str(record.seq) + "\n")
+    return
+
+
+def make_NCBI_replicon_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
+    ## this function 
+    gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
+    for gzfile in gzfilelist:
+        gzpath = os.path.join(refgenomes_dir, gzfile)
+        genome_id = gzfile.split(".gbff.gz")[0]
+        fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
+        generate_replicon_level_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
 
 
@@ -550,10 +587,14 @@ def pipeline_main():
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
-    
-    kallisto_ref_dir = "../results/kallisto_references/"
-    kallisto_index_dir = "../results/kallisto_indices/"
-    kallisto_quant_results_dir = "../results/kallisto_quant/"
+    ## directories for gene-level copy number estimation with kallisto.
+    kallisto_gene_ref_dir = "../results/kallisto_gene_references/"
+    kallisto_gene_index_dir = "../results/kallisto_gene_indices/"
+    kallisto_gene_quant_results_dir = "../results/kallisto_gene_quant/"
+    ## directories for replicon-level copy number estimation with kallisto.
+    kallisto_replicon_ref_dir = "../results/kallisto_replicon_references/"
+    kallisto_replicon_index_dir = "../results/kallisto_replicon_indices/"
+    kallisto_replicon_quant_results_dir = "../results/kallisto_replicon_quant/"
 
     gene_copy_number_csv_file = "../results/NCBI-gene_copy_numbers.csv"
     ARG_copy_number_csv_file = "../results/NCBI-ARG_copy_numbers.csv"
@@ -604,22 +645,43 @@ def pipeline_main():
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
             
-    ## Stage 4: Make FASTA reference files for copy number estimation for genes in each genome using kallisto.
+    ## Stage 4: Make gene-level FASTA reference files for copy number estimation for genes in each genome using kallisto.
     stage_4_complete_file = "../results/stage4.done"
     if exists(stage_4_complete_file):
         print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
     else:
-        make_fasta_ref_start_time = time.time()  # Record the start time
-        make_NCBI_fasta_refs_for_kallisto(reference_genome_dir, kallisto_ref_dir)
-        make_fasta_ref_end_time = time.time()  # Record the end time
-        make_fasta_ref_execution_time = make_fasta_ref_end_time - make_fasta_ref_start_time
-        Stage4TimeMessage = f"Stage 4 (making FASTA references for kallisto) execution time: {make_fasta_ref_execution_time} seconds"
+        make_gene_fasta_ref_start_time = time.time()  # Record the start time
+        make_NCBI_gene_fasta_refs_for_kallisto(reference_genome_dir, kallisto_gene_ref_dir)
+        make_gene_fasta_ref_end_time = time.time()  # Record the end time
+        make_gene_fasta_ref_execution_time = make_gene_fasta_ref_end_time - make_gene_fasta_ref_start_time
+        Stage4TimeMessage = f"Stage 4 (making gene-level FASTA references for kallisto) execution time: {make_gene_fasta_ref_execution_time} seconds"
         print(Stage4TimeMessage)
         logging.info(Stage4TimeMessage)
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
-            stage_4_complete_log.write("FASTA reference sequences for kallisto finished successfully.\n")
+            stage_4_complete_log.write("Gene-level FASTA reference sequences for kallisto finished successfully.\n")
 
-            
+
+    ## Stage 5: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    stage_5_complete_file = "../results/stage5.done"
+    if exists(stage_5_complete_file):
+        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
+    else:
+        make_replicon_fasta_ref_start_time = time.time()  # Record the start time
+        make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
+        make_replicon_fasta_ref_end_time = time.time()  # Record the end time
+        make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
+        Stage5TimeMessage = f"Stage 4 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds"
+
+        print(Stage5TimeMessage)
+        logging.info(Stage5TimeMessage)
+        with open(stage_5_complete_file, "w") as stage_5_complete_log:
+            stage_5_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
+
+    quit() ## FOR DEBUGGING.
+    #####################################################################################
+    #####################################################################################
+    #####################################################################################
+    
     ## Stage 5: Make kallisto index files for each genome.
     stage_5_complete_file = "../results/stage5.done"
     if exists(stage_5_complete_file):
@@ -706,8 +768,6 @@ def pipeline_main():
         logging.info(Stage9TimeMessage)
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
             stage_9_complete_log.write("stage 9 (tabulating all replicon lengths) finished successfully.\n")
-
-    ## 
 
             
     return

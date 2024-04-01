@@ -24,3 +24,8 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:Stage 7 (tabulate all gene copy numbers) execution time: 351.2087070941925 seconds
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
