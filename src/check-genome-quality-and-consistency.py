@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-find-bad-assemblies.py by Rohan Maddamsetti.
+check-genome-quality-and-consistency.py by Rohan Maddamsetti.
 
 This helper script finds the names of bad reference genomes (those without chromosomes)
 and their associated SRA data files,
@@ -101,33 +101,36 @@ def delete_bad_NCBI_reference_genome_files():
     return
 
 
+def check_SRA_data_against_reference_genomes():
+    ##  make sure the downloaded SRA data all match up to the downloaded reference genomes.
+    ## there are sometimes multiple Illumina SRA data sets for the same reference genome.
+    downloaded_reference_genome_IDs = []
+    with open("../results/downloaded-genome-ids.txt") as downloaded_ref_genomes_fh:
+        for line in downloaded_ref_genomes_fh:
+            my_genome_id = line.strip()
+            my_refseq_id = "_".join(my_genome_id.split("_")[:2])
+            downloaded_reference_genome_IDs.append(my_refseq_id)
+
+    downloaded_SRA_data_genome_IDs = []
+    with open("../results/RunID_table.csv", "r") as goodones_fh:
+        for i, line in enumerate(goodones_fh):
+            if i == 0: continue ## skip header
+            my_genome_ID = line.strip().split(",")[0]
+            downloaded_SRA_data_genome_IDs.append(my_genome_ID)
+
+    print(len(set(downloaded_reference_genome_IDs)))
+    print(len(set(downloaded_SRA_data_genome_IDs)))
+
+    missing_reference_genome_ids = list(set(downloaded_SRA_data_genome_IDs) - set(downloaded_reference_genome_IDs))
+    print(missing_reference_genome_ids)    
+    return
+    
 def main():
 
     ##find_good_ones()
     ## find_bad_ones()
     ##delete_bad_SRA_files()
     ##delete_bad_NCBI_reference_genome_files()
-
-    ## understand the discrepancy between the SRA data downloaded for ~6000 genomes,
-    ## but only ~4500 reference genomes downloaded.
-    downloaded_reference_genome_IDs = []
-    with open("../results/downloaded-genome-ids.txt") as downloaded_ref_genomes_fh:
-        for line in downloaded_ref_genomes_fh:
-            my_id = line.strip()
-            downloaded_reference_genome_IDs.append(my_id)
-
-    downloaded_SRA_data_genome_IDs = []
-    with open("../results/RunID_table.csv", "r") as goodones_fh:
-        for i, line in enumerate(goodones_fh):
-            if i == 0: continue ## skip header
-            genome_ID = line.strip().split(",")[0]
-            downloaded_SRA_data_genome_IDs.append(genome_ID)
-
-    missing_reference_genome_ids = list(set(downloaded_SRA_data_genome_IDs) - set(downloaded_reference_genome_IDs))
-    
-    with open("../results/missing-reference-genomes.txt", "w") as missing_genomes_fh:
-        for x in missing_reference_genome_ids:
-            missing_genomes_fh.write(x + "\n")
-    
+    check_SRA_data_against_reference_genomes()
 
 main()
