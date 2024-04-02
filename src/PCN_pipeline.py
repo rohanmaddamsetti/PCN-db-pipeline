@@ -717,27 +717,31 @@ def pipeline_main():
             stage_7_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
 
 
-    quit() ## FOR DEBUGGING.
     #####################################################################################
-    #####################################################################################
-    #####################################################################################
-    ## Stage 6: run kallisto quant on all genome data.
+    ## Stage 8: run kallisto quant on all genome data, on both gene-level and replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
-    stage_6_complete_file = "../results/stage6.done"
-    if exists(stage_6_complete_file):
-        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
+    stage_8_complete_file = "../results/stage8.done"
+    if exists(stage_8_complete_file):
+        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
     else:
         kallisto_quant_start_time = time.time()  # Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_index_dir, SRA_data_dir, kallisto_quant_results_dir)
+        
+        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_gene_index_dir, SRA_data_dir, kallisto_gene_quant_results_dir)
+        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
+
         kallisto_quant_end_time = time.time()  # Record the end time
         kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage6TimeMessage = f"Stage 6 (kallisto quant) execution time: {kallisto_quant_execution_time} seconds"
-        print(Stage6TimeMessage)
-        logging.info(Stage6TimeMessage)
-        with open(stage_6_complete_file, "w") as stage_6_complete_log:
-            stage_6_complete_log.write("kallisto quant finished successfully.\n")
+        Stage8TimeMessage = f"Stage 8 (kallisto quant, gene-level and replicon-level) execution time: {kallisto_quant_execution_time} seconds"
+        print(Stage8TimeMessage)
+        logging.info(Stage8TimeMessage)
+        with open(stage_8_complete_file, "w") as stage_8_complete_log:
+            stage_8_complete_log.write("kallisto quant, gene-level and replicon-level finished successfully.\n")
 
+    quit() ## FOR DEBUGGING.
+    #####################################################################################
+    #####################################################################################
+    
     ## Stage 7: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
     ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
@@ -793,7 +797,7 @@ def pipeline_main():
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
             stage_9_complete_log.write("stage 9 (tabulating all replicon lengths) finished successfully.\n")
 
-            
+    
     return
 
 
