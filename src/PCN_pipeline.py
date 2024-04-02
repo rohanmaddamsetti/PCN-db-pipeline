@@ -268,7 +268,7 @@ def generate_gene_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
 
 
 def make_NCBI_gene_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
-    ## this function 
+    ## this function makes fasta sequences for every gene in every genome.
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
@@ -304,7 +304,7 @@ def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
 
 
 def make_NCBI_replicon_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
-    ## this function 
+    ## this function makes fasta sequences for every replicon in every genome.
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
@@ -601,6 +601,8 @@ def pipeline_main():
     copy_number_csv_file = "../results/NCBI-chromosome_plasmid_copy_numbers.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
+    
+    #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
@@ -615,6 +617,8 @@ def pipeline_main():
         print(Stage1TimeMessage)
         logging.info(Stage1TimeMessage)
 
+    
+    #####################################################################################
     ## Stage 2: download reference genomes for each of the bacterial genomes containing plasmids,
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
@@ -628,7 +632,9 @@ def pipeline_main():
         fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir)
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
-        
+
+    
+    #####################################################################################
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
     stage_3_complete_file = "../results/stage3.done"
     if exists(stage_3_complete_file):
@@ -644,7 +650,8 @@ def pipeline_main():
         with open(stage_3_complete_file, "w") as stage_3_complete_log:
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
 
-            
+    
+    #####################################################################################   
     ## Stage 4: Make gene-level FASTA reference files for copy number estimation for genes in each genome using kallisto.
     stage_4_complete_file = "../results/stage4.done"
     if exists(stage_4_complete_file):
@@ -677,26 +684,43 @@ def pipeline_main():
         with open(stage_5_complete_file, "w") as stage_5_complete_log:
             stage_5_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
 
+    #####################################################################################
+    ## Stage 6: Make gene-level kallisto index files for each genome.
+    stage_6_complete_file = "../results/stage6.done"
+    if exists(stage_6_complete_file):
+        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
+    else:
+        make_kallisto_gene_index_start_time = time.time()  # Record the start time
+        make_NCBI_kallisto_indices(kallisto_gene_ref_dir, kallisto_gene_index_dir)
+        make_kallisto_gene_index_end_time = time.time()  # Record the end time
+        make_kallisto_gene_index_execution_time = make_kallisto_gene_index_end_time - make_kallisto_gene_index_start_time
+        Stage6TimeMessage = f"Stage 6 (making gene-indices for kallisto) execution time: {make_kallisto_gene_index_execution_time} seconds"
+        print(Stage6TimeMessage)
+        logging.info(Stage6TimeMessage)
+        with open(stage_6_complete_file, "w") as stage_6_complete_log:
+            stage_6_complete_log.write("kallisto gene-index file construction finished successfully.\n")
+
+
+    ## Stage 7: Make replicon-level kallisto index files for each genome.
+    stage_7_complete_file = "../results/stage7.done"
+    if exists(stage_7_complete_file):
+        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
+    else:
+        make_kallisto_replicon_index_start_time = time.time()  # Record the start time
+        make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
+        make_kallisto_replicon_index_end_time = time.time()  # Record the end time
+        make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
+        Stage7TimeMessage = f"Stage 7 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds"
+        print(Stage7TimeMessage)
+        logging.info(Stage7TimeMessage)
+        with open(stage_7_complete_file, "w") as stage_7_complete_log:
+            stage_7_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
+
+
     quit() ## FOR DEBUGGING.
     #####################################################################################
     #####################################################################################
     #####################################################################################
-    
-    ## Stage 5: Make kallisto index files for each genome.
-    stage_5_complete_file = "../results/stage5.done"
-    if exists(stage_5_complete_file):
-        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
-    else:
-        make_kallisto_index_start_time = time.time()  # Record the start time
-        make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir)
-        make_kallisto_index_end_time = time.time()  # Record the end time
-        make_kallisto_index_execution_time = make_kallisto_index_end_time - make_kallisto_index_start_time
-        Stage5TimeMessage = f"Stage 5 (making indices for kallisto) execution time: {make_kallisto_index_execution_time} seconds"
-        print(Stage5TimeMessage)
-        logging.info(Stage5TimeMessage)
-        with open(stage_5_complete_file, "w") as stage_5_complete_log:
-            stage_5_complete_log.write("kallisto index file construction finished successfully.\n")
-
     ## Stage 6: run kallisto quant on all genome data.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
     stage_6_complete_file = "../results/stage6.done"

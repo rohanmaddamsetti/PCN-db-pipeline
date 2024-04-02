@@ -29,3 +29,12 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 6 (making gene-indices for kallisto) execution time: 11.343519926071167 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 6 (making gene-indices for kallisto) execution time: 11.239960193634033 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 7 (making replicon-indices for kallisto) execution time: 93.04286217689514 seconds
