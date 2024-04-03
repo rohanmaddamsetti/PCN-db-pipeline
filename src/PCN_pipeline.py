@@ -677,7 +677,7 @@ def pipeline_main():
         make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
         make_replicon_fasta_ref_end_time = time.time()  # Record the end time
         make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
-        Stage5TimeMessage = f"Stage 4 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds"
+        Stage5TimeMessage = f"Stage 5 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds"
 
         print(Stage5TimeMessage)
         logging.info(Stage5TimeMessage)
@@ -742,60 +742,60 @@ def pipeline_main():
     #####################################################################################
     #####################################################################################
     
-    ## Stage 7: make a table of the estimated copy number and position for all genes in all chromosomes
+    ## Stage 9: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
     ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
-    stage_7_complete_file = "../results/stage7.done"
-    if exists(stage_7_complete_file):
-        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
-    else:
-        stage7_start_time = time.time()  # Record the start time
-        ## first make a file containing the copy number estimates for each individual gene
-        measure_NCBI_gene_copy_numbers(kallisto_quant_results_dir, gene_copy_number_csv_file)
-        ## then filter that output file for ARGs (faster to do in python than downstream in R).
-        filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file)
-
-        stage7_end_time = time.time()  # Record the end time
-        stage7_execution_time = stage7_end_time - stage7_start_time
-        Stage7TimeMessage = f"Stage 7 (tabulate all gene copy numbers) execution time: {stage7_execution_time} seconds"
-        print(Stage7TimeMessage)
-        logging.info(Stage7TimeMessage)
-        with open(stage_7_complete_file, "w") as stage_7_complete_log:
-            stage_7_complete_log.write("stage 7 (tabulating all gene copy numbers) finished successfully.\n")
-
-    ## Stage 8: make a table of the estimated copy number for all chromosomes and plasmids.
-    stage_8_complete_file = "../results/stage8.done"
-    if exists(stage_8_complete_file):
-        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
-    else:
-        stage8_start_time = time.time()  # Record the start time
-        
-        measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
-
-        stage8_end_time = time.time()  # Record the end time
-        stage8_execution_time = stage8_end_time - stage8_start_time
-        Stage8TimeMessage = f"Stage 8 (tabulate all replicon copy numbers) execution time: {stage8_execution_time} seconds"
-        print(Stage8TimeMessage)
-        logging.info(Stage8TimeMessage)
-        with open(stage_8_complete_file, "w") as stage_8_complete_log:
-            stage_8_complete_log.write("stage 8 (tabulating all replicon copy numbers) finished successfully.\n")
-
-    ## Stage 9: tabulate the length of all chromosomes and plasmids.
     stage_9_complete_file = "../results/stage9.done"
     if exists(stage_9_complete_file):
         print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
     else:
         stage9_start_time = time.time()  # Record the start time
-        
-        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+        ## first make a file containing the copy number estimates for each individual gene
+        measure_NCBI_gene_copy_numbers(kallisto_quant_results_dir, gene_copy_number_csv_file)
+        ## then filter that output file for ARGs (faster to do in python than downstream in R).
+        filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file)
 
         stage9_end_time = time.time()  # Record the end time
         stage9_execution_time = stage9_end_time - stage9_start_time
-        Stage9TimeMessage = f"Stage 9 (tabulate all replicon lengths) execution time: {stage9_execution_time} seconds"
+        Stage9TimeMessage = f"Stage 9 (tabulate all gene copy numbers) execution time: {stage9_execution_time} seconds"
         print(Stage9TimeMessage)
         logging.info(Stage9TimeMessage)
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
-            stage_9_complete_log.write("stage 9 (tabulating all replicon lengths) finished successfully.\n")
+            stage_9_complete_log.write("stage 9 (tabulating all gene copy numbers) finished successfully.\n")
+
+    ## Stage 10: make a table of the estimated copy number for all chromosomes and plasmids.
+    stage_10_complete_file = "../results/stage10.done"
+    if exists(stage_10_complete_file):
+        print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
+    else:
+        stage10_start_time = time.time()  # Record the start time
+        
+        measure_NCBI_replicon_copy_numbers(kallisto_quant_results_dir, copy_number_csv_file)
+
+        stage10_end_time = time.time()  # Record the end time
+        stage10_execution_time = stage10_end_time - stage10_start_time
+        Stage10TimeMessage = f"Stage 10 (tabulate all replicon copy numbers) execution time: {stage10_execution_time} seconds"
+        print(Stage10TimeMessage)
+        logging.info(Stage10TimeMessage)
+        with open(stage_10_complete_file, "w") as stage_8_complete_log:
+            stage_10_complete_log.write("stage 10 (tabulating all replicon copy numbers) finished successfully.\n")
+
+    ## Stage 11: tabulate the length of all chromosomes and plasmids.
+    stage_11_complete_file = "../results/stage11.done"
+    if exists(stage_11_complete_file):
+        print(f"{stage_11_complete_file} exists on disk-- skipping stage 11.")
+    else:
+        stage11_start_time = time.time()  # Record the start time
+        
+        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+
+        stage11_end_time = time.time()  # Record the end time
+        stage11_execution_time = stage11_end_time - stage11_start_time
+        Stage11TimeMessage = f"Stage 11 (tabulate all replicon lengths) execution time: {stage11_execution_time} seconds"
+        print(Stage11TimeMessage)
+        logging.info(Stage11TimeMessage)
+        with open(stage_11_complete_file, "w") as stage_11_complete_log:
+            stage_11_complete_log.write("stage 11 (tabulating all replicon lengths) finished successfully.\n")
 
     
     return
