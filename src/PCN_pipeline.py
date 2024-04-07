@@ -285,7 +285,6 @@ def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
             SeqType = None
             for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
                 SeqID = record.id
-                print("RECORD DESCRIPTION", record.description)## DEBUGGING
                 if "chromosome" in record.description or i == 0:
                     ## IMPORTANT: we assume here that the first record is a chromosome.
                     SeqType = "chromosome"
@@ -302,7 +301,8 @@ def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
 
 
 def make_NCBI_replicon_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
-    ## this function makes fasta sequences for every replicon in every genome.
+    ## this function makes a genome fasta file for each genome.
+    ## each genome fasta file contains fasta sequences for every replicon.
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
@@ -657,13 +657,90 @@ def filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_nu
     return
 
 
-def make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_fasta_ref_dir):
-    if not exists(themisto_fasta_ref_dir): ## make the output directory if it does not exist.
-        os.mkdir(themisto_fasta_ref_dir)
-    
-    quit()
+def generate_replicon_fasta_references_for_themisto(gbk_gz_path, fasta_outdir):
+    print("reading in as input:", gbk_gz_path)
+    ## open the input reference genome file.
+    with gzip.open(gbk_gz_path, 'rt') as gbk_gz_fh:
+        SeqID = None
+        SeqType = None
+        for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
+            SeqID = record.id
+            if "chromosome" in record.description or i == 0:
+                ## IMPORTANT: we assume here that the first record is a chromosome.
+                SeqType = "chromosome"
+            elif "plasmid" in record.description:
+                SeqType = "plasmid"
+            else:
+                continue
+            ## replace spaces with underscores in the replicon annotation field.
+            replicon_description = record.description.replace(" ","_")
+            header = ">" + "|".join(["SeqID="+SeqID,"SeqType="+SeqType,"replicon="+replicon_description])
+            my_replicon_fastafile = SeqID + ".fna"
+            my_replicon_outfilepath = os.path.join(fasta_outdir, my_replicon_fastafile)
+            with open(my_replicon_outfilepath, "w") as outfh:
+                outfh.write(header + "\n")
+                outfh.write(str(record.seq) + "\n")
+
+
+def generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir):
+    genome_id = os.path.basename(fasta_outdir)
+    replicon_fasta_filelist = [x for x in os.listdir(fasta_outdir) if x.endswith(".fna")]
+    replicon_listfile = os.path.join(fasta_outdir, genome_id + ".txt")
+    with open(replicon_listfile, "w") as fastatxtfile_fh:
+        for fastafile in replicon_fasta_filelist:
+            my_replicon_fasta_path = os.path.join(fasta_outdir, fastafile)
+            fastatxtfile_fh.write(my_replicon_fasta_path + "\n")
     return
 
+
+def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_ref_outdir):
+    ## this function makes a genome directory for each genome.
+    ## each directory contains separate fasta files for each replicon.
+
+    ## make the output directory if it does not exist.
+    if not exists(themisto_fasta_ref_outdir):
+        os.mkdir(themisto_fasta_ref_outdir)
+
+    gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
+    for gzfile in gzfilelist:
+        gzpath = os.path.join(refgenomes_dir, gzfile)
+        genome_id = gzfile.split(".gbff.gz")[0]
+        fasta_outdir = os.path.join(themisto_fasta_ref_outdir, genome_id)
+        ## make the fasta output directory if it does not exist.
+        if not exists(fasta_outdir):
+            os.mkdir(fasta_outdir)
+        generate_replicon_fasta_references_for_themisto(gzpath, fasta_outdir)
+        generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir)
+    return
+
+
+def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
+
+    ## make the output directory if it does not exist.
+    if not exists(themisto_index_dir):
+        os.mkdir(themisto_index_dir)
+
+    ## each directory is named after the genome_id of the given genome.
+    for genome_id in os.listdir(themisto_ref_dir):
+        ## get the actual path for this directory
+        ref_fasta_dir = os.path.join(themisto_ref_dir, genome_id)
+        ## make sure that this path is real, and not an artifact of some weird file in this directory
+        if not os.path.isdir(ref_fasta_dir):
+            continue 
+        genome_id = ref_fasta_dir
+        index_input_filelist = os.path.join(themisto_ref_dir, ref_fasta_dir, genome_id + ".txt")
+        index_prefix = os.path.join(themisto_index_dir, genome_id)
+        tempdir = os.path.join(themisto_index_dir, "temp")
+        
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "2", "--n-threads", "4", "--file-colors"]
+
+        themisto_build_string = " ".join(themisto_build_args)
+        print(themisto_build_string)
+        
+        slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
+        print(slurm_string)
+        subprocess.run(slurm_string, shell=True)
+    return
 
 ################################################################################
 
@@ -694,6 +771,7 @@ def pipeline_main():
 
     ## directories for themisto inputs and outputs.
     themisto_replicon_ref_dir = "../results/themisto_replicon_references/"
+    themisto_replicon_index_dir = "../results/themisto_replicon_indices"
     
 
     #####################################################################################
@@ -898,10 +976,7 @@ def pipeline_main():
         print(f"{stage_12_complete_file} exists on disk-- skipping stage 12.")
     else:
         stage12_start_time = time.time()  # Record the start time
-
         make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
-        quit() ##################################### for debugging.
-        
         stage12_end_time = time.time()  # Record the end time
         stage12_execution_time = stage12_end_time - stage12_start_time
         Stage12TimeMessage = f"Stage 12 (making fasta references for themisto) execution time: {stage12_execution_time} seconds"
@@ -910,10 +985,27 @@ def pipeline_main():
         with open(stage_12_complete_file, "w") as stage_12_complete_log:
             stage_12_complete_log.write("stage 12 (making fasta references for themisto) finished successfully.\n")
 
+    #####################################################################################
     ## Stage 13: Build separate Themisto indices for each genome.
+    stage_13_complete_file = "../results/stage13.done"
+    if exists(stage_13_complete_file):
+        print(f"{stage_13_complete_file} exists on disk-- skipping stage 13.")
+    else:
+        stage13_start_time = time.time()  # Record the start time
+        make_NCBI_themisto_indices(themisto_replicon_ref_dir, themisto_replicon_index_dir)
+        stage13_end_time = time.time()  # Record the end time
+        stage13_execution_time = stage13_end_time - stage13_start_time
+        Stage13TimeMessage = f"Stage 13 (making indices for themisto) execution time: {stage13_execution_time} seconds"
+        print(Stage13TimeMessage)
+        logging.info(Stage13TimeMessage)
+        with open(stage_13_complete_file, "w") as stage_13_complete_log:
+            stage_13_complete_log.write("stage 13 (making indices for themisto) finished successfully.\n")
 
+    #####################################################################################
     ## Stage 14: Pseudoalign reads for each genome against each Themisto index.
 
+    
+    
     ## Stage 15: analyze the pseudoalignment results, and generate some CSV table representation
     ## of the results to analyze with R.
     
