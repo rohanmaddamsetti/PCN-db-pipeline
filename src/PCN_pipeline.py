@@ -657,6 +657,14 @@ def filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_nu
     return
 
 
+def make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_fasta_ref_dir):
+    if not exists(themisto_fasta_ref_dir): ## make the output directory if it does not exist.
+        os.mkdir(themisto_fasta_ref_dir)
+    
+    quit()
+    return
+
+
 ################################################################################
 
 def pipeline_main():
@@ -684,6 +692,9 @@ def pipeline_main():
     calculated_copy_number_csv_file = "../results/NCBI-replicon_copy_numbers_from_genes.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
+    ## directories for themisto inputs and outputs.
+    themisto_replicon_ref_dir = "../results/themisto_replicon_references/"
+    
 
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -876,7 +887,36 @@ def pipeline_main():
         logging.info(Stage11TimeMessage)
         with open(stage_11_complete_file, "w") as stage_11_complete_log:
             stage_11_complete_log.write("stage 11 (tabulating all replicon lengths) finished successfully.\n")
-            
+
+    #####################################################################################
+    ## Stage 12: Make FASTA input files for Themisto.
+    ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
+    ## Then, write out a text file that contains the paths to the FASTA files of the genomes, one file per line.
+    ## See documentation here: https://github.com/algbio/themisto.
+    stage_12_complete_file = "../results/stage12.done"
+    if exists(stage_12_complete_file):
+        print(f"{stage_12_complete_file} exists on disk-- skipping stage 12.")
+    else:
+        stage12_start_time = time.time()  # Record the start time
+
+        make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
+        quit() ##################################### for debugging.
+        
+        stage12_end_time = time.time()  # Record the end time
+        stage12_execution_time = stage12_end_time - stage12_start_time
+        Stage12TimeMessage = f"Stage 12 (making fasta references for themisto) execution time: {stage12_execution_time} seconds"
+        print(Stage12TimeMessage)
+        logging.info(Stage12TimeMessage)
+        with open(stage_12_complete_file, "w") as stage_12_complete_log:
+            stage_12_complete_log.write("stage 12 (making fasta references for themisto) finished successfully.\n")
+
+    ## Stage 13: Build separate Themisto indices for each genome.
+
+    ## Stage 14: Pseudoalign reads for each genome against each Themisto index.
+
+    ## Stage 15: analyze the pseudoalignment results, and generate some CSV table representation
+    ## of the results to analyze with R.
+    
     return
 
 

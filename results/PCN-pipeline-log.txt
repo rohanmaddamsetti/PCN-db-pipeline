@@ -46,3 +46,8 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:Stage 10 (tabulate all replicon copy numbers) execution time: 41.4783821105957 seconds
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 11 (tabulate all replicon lengths) execution time: 5794.887065887451 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
