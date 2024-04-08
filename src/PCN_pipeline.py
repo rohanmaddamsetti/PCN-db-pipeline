@@ -743,8 +743,8 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
 
 def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
-    if not exists(themisto_pseudoalign_dir):
-        os.mkdir(themisto_pseudoalign_dir)
+    if not exists(themisto_pseudoalignment_dir):
+        os.mkdir(themisto_pseudoalignment_dir)
 
     ## each directory in themisto_index_dir is named after the genome_id of the given genome.
     for genome_id in os.listdir(themisto_index_dir):
@@ -759,14 +759,14 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         refseq_id = "_".join(genome_id.split("_")[:2])
         Run_ID_list = RefSeq_to_SRA_RunList_dict[refseq_id]
         ## make read_path_arg_list.
-        read_path_arg_list = list()
+        readpath_list = list()
         for Run_ID in Run_ID_list:
             SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
             matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
-            read_path_arg_list += matched_fastq_list
+            readpath_list += matched_fastq_list
 
         ## if we didn't find any fastq data for this genome, then skip to the next genome.
-        if not len(read_path_arg_list):
+        if not len(readpath_list):
             continue
         
         ## now, write the paths for the SRA read data to disk for themisto pseudoalign.
