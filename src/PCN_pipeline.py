@@ -726,20 +726,50 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         ref_fasta_dir = os.path.join(themisto_ref_dir, genome_id)
         ## make sure that this path is real, and not an artifact of some weird file in this directory
         if not os.path.isdir(ref_fasta_dir):
-            continue 
-        genome_id = ref_fasta_dir
-        index_input_filelist = os.path.join(themisto_ref_dir, ref_fasta_dir, genome_id + ".txt")
+            continue
+        index_input_filelist = os.path.join(ref_fasta_dir, genome_id + ".txt")
         index_prefix = os.path.join(themisto_index_dir, genome_id)
         tempdir = os.path.join(themisto_index_dir, "temp")
-        
+        ## make the temp directory if it doesn't exist.
+        if not exists(tempdir):
+            os.mkdir(tempdir)
         themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "2", "--n-threads", "4", "--file-colors"]
-
         themisto_build_string = " ".join(themisto_build_args)
-        print(themisto_build_string)
-        
         slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
+    return
+
+
+def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA_data_dir, results_dir):
+    ## IMPORTANT: kallisto needs -l -s parameters supplied when run on single-end data.
+    ## to avoid this complexity, I only process paired-end Illumina data, and skip single-end data altogether.
+    index_list = [x for x in os.listdir(kallisto_index_dir) if x.endswith(".idx")]
+    for index_file in index_list:
+        index_path = os.path.join(kallisto_index_dir, index_file)
+        genome_id = index_file.split(".idx")[0]
+        refseq_id = "_".join(genome_id.split("_")[:2])
+        Run_ID_list = RefSeq_to_SRA_RunList_dict[refseq_id]
+        ## make read_path_arg_list.
+        read_path_arg_list = list()
+        for Run_ID in Run_ID_list:
+            SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
+            matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
+            if len(matched_fastq_list) != 2: ## skip if we didn't find paired fastq reads.
+                continue
+            read_path_arg_list += matched_fastq_list
+        ## run kallisto quant with 10 threads by default.
+        output_path = os.path.join(results_dir, genome_id)
+        if len(read_path_arg_list): ## if we found paired-end fastq reads for this genome, then run kallisto.
+            themisto_pseudoalign_args = ["themisto", "pseudoalign", "-t", "10", "-i", index_path, "-o", output_path, "-b", "100"] + read_path_arg_list
+            themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
+
+            ## themisto pseudoalign --query-file example_input/queries.fna --index-prefix my_index --temp-dir temp --out-file out.txt --n-threads 4 --threshold 0.7
+
+            
+            slurm_string = "sbatch -p scavenger --mem=16G --wrap=" + "\"" + themisto_pseudoalign_string + "\""
+            print(slurm_string)
+            ##subprocess.run(slurm_string, shell=True)
     return
 
 ################################################################################
@@ -1004,7 +1034,24 @@ def pipeline_main():
     #####################################################################################
     ## Stage 14: Pseudoalign reads for each genome against each Themisto index.
 
-    
+    stage_14_complete_file = "../results/stage14.done"
+    if exists(stage_14_complete_file):
+        print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
+    else:
+        stage14_start_time = time.time()  # Record the start time
+
+        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, results_dir)
+        quit()
+        
+        stage14_end_time = time.time()  # Record the end time
+        stage14_execution_time = stage13_end_time - stage13_start_time
+        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage13_execution_time} seconds"
+        print(Stage14TimeMessage)
+        logging.info(Stage14TimeMessage)
+        with open(stage_14_complete_file, "w") as stage_14_complete_log:
+            stage_13_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
+
     
     ## Stage 15: analyze the pseudoalignment results, and generate some CSV table representation
     ## of the results to analyze with R.
