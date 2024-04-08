@@ -741,13 +741,21 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     return
 
 
-def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA_data_dir, results_dir):
-    ## IMPORTANT: kallisto needs -l -s parameters supplied when run on single-end data.
-    ## to avoid this complexity, I only process paired-end Illumina data, and skip single-end data altogether.
-    index_list = [x for x in os.listdir(kallisto_index_dir) if x.endswith(".idx")]
-    for index_file in index_list:
-        index_path = os.path.join(kallisto_index_dir, index_file)
-        genome_id = index_file.split(".idx")[0]
+def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
+    ## make the output directory if it does not exist.
+    if not exists(themisto_pseudoalign_dir):
+        os.mkdir(themisto_pseudoalign_dir)
+
+    ## each directory in themisto_index_dir is named after the genome_id of the given genome.
+    for genome_id in os.listdir(themisto_index_dir):
+        my_index_dir = os.path.join(themisto_index_dir, genome_id)
+        ## make sure that this path is real, and not an artifact of some weird file in this directory
+        if not os.path.isdir(my_index_dir):
+            continue
+        ## make the arguments relating to the paths to the index files for this genome.
+        my_index_prefix = os.path.join(themisto_index_dir, genome_id)
+
+        ## make the file containing the paths to the sequencing read data for this genome.
         refseq_id = "_".join(genome_id.split("_")[:2])
         Run_ID_list = RefSeq_to_SRA_RunList_dict[refseq_id]
         ## make read_path_arg_list.
@@ -755,21 +763,33 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         for Run_ID in Run_ID_list:
             SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
             matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
-            if len(matched_fastq_list) != 2: ## skip if we didn't find paired fastq reads.
-                continue
             read_path_arg_list += matched_fastq_list
-        ## run kallisto quant with 10 threads by default.
-        output_path = os.path.join(results_dir, genome_id)
-        if len(read_path_arg_list): ## if we found paired-end fastq reads for this genome, then run kallisto.
-            themisto_pseudoalign_args = ["themisto", "pseudoalign", "-t", "10", "-i", index_path, "-o", output_path, "-b", "100"] + read_path_arg_list
-            themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
 
-            ## themisto pseudoalign --query-file example_input/queries.fna --index-prefix my_index --temp-dir temp --out-file out.txt --n-threads 4 --threshold 0.7
+        ## if we didn't find any fastq data for this genome, then skip to the next genome.
+        if not len(read_path_arg_list):
+            continue
+        
+        ## now, write the paths for the SRA read data to disk for themisto pseudoalign.
+        SRAdata_listfile = os.path.join(themisto_pseudoalignment_dir, genome_id + "_SRAdata.txt")
+        with open(SRAdata_listfile, "w") as SRAtxtfile_fh:
+            for readpath in readpath_list:
+                SRAtxtfile_fh.write(readpath + "\n")
 
+        tempdir = os.path.join(themisto_pseudoalignment_dir, "temp")
+        ## make the temp directory if it doesn't exist.
+        if not exists(tempdir):
+            os.mkdir(tempdir)
             
-            slurm_string = "sbatch -p scavenger --mem=16G --wrap=" + "\"" + themisto_pseudoalign_string + "\""
-            print(slurm_string)
-            ##subprocess.run(slurm_string, shell=True)
+        ## name the output file.
+        my_pseudoalignment_path = os.path.join(themisto_pseudoalignment_dir, genome_id + "_pseudoalignment.txt")
+            
+        ## now run themisto pseudoalign.
+        themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file", my_pseudoalignment_path, "--n-threads", "4", "--threshold", "0.7"]
+        themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
+        slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
+        print(slurm_string)
+        subprocess.run(slurm_string, shell=True)
+        quit() ## FOR DEBUGGING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     return
 
 ################################################################################
@@ -802,6 +822,7 @@ def pipeline_main():
     ## directories for themisto inputs and outputs.
     themisto_replicon_ref_dir = "../results/themisto_replicon_references/"
     themisto_replicon_index_dir = "../results/themisto_replicon_indices"
+    themisto_pseudoalignment_dir = "../results/themisto_replicon_pseudoalignments"
     
 
     #####################################################################################
@@ -1039,9 +1060,8 @@ def pipeline_main():
         print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
     else:
         stage14_start_time = time.time()  # Record the start time
-
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, results_dir)
+        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
         quit()
         
         stage14_end_time = time.time()  # Record the end time
