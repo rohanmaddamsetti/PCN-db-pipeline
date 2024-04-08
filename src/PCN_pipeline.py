@@ -779,17 +779,27 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         ## make the temp directory if it doesn't exist.
         if not exists(tempdir):
             os.mkdir(tempdir)
+
+        ## make the directory for the pseudoalignments.
+        my_pseudoalignment_output_dir = os.path.join(themisto_pseudoalignment_dir, genome_id)
+        if not exists(my_pseudoalignment_output_dir):
+            os.mkdir(my_pseudoalignment_output_dir)
             
-        ## name the output file.
-        my_pseudoalignment_path = os.path.join(themisto_pseudoalignment_dir, genome_id + "_pseudoalignment.txt")
+        ## we make corresponding pseudoalignment output files for each SRA dataset.
+        ## This list goes into the output listfile.
+        output_listfile = os.path.join(themisto_pseudoalignment_dir, genome_id + "_pseudoalignments.txt")
+        with open(output_listfile, "w") as output_listfile_fh:
+            for readpath in readpath_list:
+                read_filename = os.path.basename(readpath).split(".fastq")[0]
+                output_filename = os.path.join(my_pseudoalignment_output_dir, read_filename + "_pseudoalignment.txt")
+                output_listfile_fh.write(output_filename + "\n")
             
         ## now run themisto pseudoalign.
-        themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file", my_pseudoalignment_path, "--n-threads", "4", "--threshold", "0.7"]
+        themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
         slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
-        quit() ## FOR DEBUGGING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     return
 
 ################################################################################
