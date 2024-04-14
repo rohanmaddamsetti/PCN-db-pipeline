@@ -7,11 +7,21 @@ For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $
 On DCC, run the following to get these programs into the path:
 conda activate PCNdb-env
 
-Currently, this pipeline only analyzes Illumina short-read data with kallisto.
-
-TODO: use Themisto in addition to Kallisto as an internal control (should also work better).
-
+Currently, this pipeline only analyzes Illumina short-read data.
 TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
+
+Currently, the themisto analysis ignores reads that map to multiple replicons. However,
+in principle we can leverage this information in two ways.
+1) first, we should be able to infer the length of shared regions, based on the number of
+reads in the intersection (this is a linear inverse problem). This will give us the most
+accurate estimates of PCN copy number since we can use all the data. However,
+I need to figure out an analytical/numerical solution, and code up an implementation.
+
+2) we can use reads that map to multiple replicons to infer the size of duplicated/repeat regions
+shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
+for instance, determining the extent of HGT within genomes between replicons.
+
+CRITICAL TODO: utilize reads shared among replicons to more accurately infer PCN.
 
 """
 
@@ -802,6 +812,11 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         subprocess.run(slurm_string, shell=True)
     return
 
+
+def summarize_themisto_pseudoalignment_results(themisto_pseudoalignment_dir):
+    pass
+
+
 ################################################################################
 
 def pipeline_main():
@@ -1072,19 +1087,31 @@ def pipeline_main():
         stage14_start_time = time.time()  # Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
         run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
-        quit()
-        
         stage14_end_time = time.time()  # Record the end time
-        stage14_execution_time = stage13_end_time - stage13_start_time
-        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage13_execution_time} seconds"
+        stage14_execution_time = stage14_end_time - stage14_start_time
+        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds"
         print(Stage14TimeMessage)
         logging.info(Stage14TimeMessage)
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
-            stage_13_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
+            stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
 
-    
-    ## Stage 15: analyze the pseudoalignment results, and generate some CSV table representation
-    ## of the results to analyze with R.
+    ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment results for analysis with R.
+    stage_15_complete_file = "../results/stage15.done"
+    if exists(stage_15_complete_file):
+        print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
+    else:
+        stage15_start_time = time.time()  # Record the start tim
+        summarize_themisto_pseudoalignment_results(themisto_pseudoalignment_dir)
+        quit()
+        
+        stage15_end_time = time.time()  # Record the end time
+        stage15_execution_time = stage15_end_time - stage15_start_time
+        Stage15TimeMessage = f"Stage 15 (themisto pseudoalignment summarization) execution time: {stage15_execution_time} seconds"
+        print(Stage15TimeMessage)
+        logging.info(Stage15TimeMessage)
+        with open(stage_15_complete_file, "w") as stage_15_complete_log:
+            stage_15_complete_log.write("stage 15 (themisto pseudoalignment summarization) finished successfully.\n")
+
     
     return
 
