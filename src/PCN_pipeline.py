@@ -725,7 +725,6 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
 
 
 def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
-
     ## make the output directory if it does not exist.
     if not exists(themisto_index_dir):
         os.mkdir(themisto_index_dir)
@@ -813,8 +812,62 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
     return
 
 
-def summarize_themisto_pseudoalignment_results(themisto_pseudoalignment_dir):
-    pass
+def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path):
+    with open(themisto_results_csvfile_path, "w") as output_csv_fh:
+        ## first, write the output header.
+        output_header = "AnnotationAccession,SeqID,SeqType,ReadCount"
+        output_csv_fh.write(output_header + "\n")
+        print(output_header)
+        ## Iterate over the directories in themisto_pseudoalignment_dir.
+        ## These contain the pseudoalignments for each genome.
+        themisto_pseudoalignment_result_dirs = [x for x in os.listdir(themisto_pseudoalignment_dir) if os.path.isdir(os.path.join(themisto_pseudoalignment_dir, x))]
+        for my_genome_dirname in themisto_pseudoalignment_result_dirs:
+            my_cur_pseudoalignment_dir_path = os.path.join(themisto_pseudoalignment_dir, my_genome_dirname)
+            my_cur_AnnotationAccession = my_genome_dirname.strip("_genomic")
+            ## initialize a dictionary to store the pseudoalignment counts.
+            pseudoalignment_read_count_dict = dict()
+            pseudoalignment_filepaths = [os.path.join(my_cur_pseudoalignment_dir_path, x) for x in os.listdir(my_cur_pseudoalignment_dir_path) if x.endswith("_pseudoalignment.txt")]
+            ## now, summarize the read counts for this genome.
+            for my_pseudoalignment_filepath in pseudoalignment_filepaths:
+                with open(my_pseudoalignment_filepath) as my_pseudoalignment_fh:
+                    for line in my_pseudoalignment_fh:
+                        ## handle odd behavior in themisto: we need to sort the themisto replicon ID numbers ourselves.
+                        replicon_set_string = " ".join(sorted(line.strip().split()[1:]))
+                        if replicon_set_string in pseudoalignment_read_count_dict:
+                            pseudoalignment_read_count_dict[replicon_set_string] += 1
+                        else:
+                            pseudoalignment_read_count_dict[replicon_set_string] = 1
+            ## now, let's map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
+            themisto_ID_to_seq_metadata_dict = dict()
+            my_themisto_replicon_ID_mapping_file = os.path.join(themisto_replicon_ref_dir, my_genome_dirname, my_genome_dirname + ".txt")
+            with open(my_themisto_replicon_ID_mapping_file, "r") as replicon_ID_mapping_fh:
+                for i,fasta_file_path in enumerate(replicon_ID_mapping_fh):
+                    fasta_file_path = fasta_file_path.strip()
+                    ## get the header from this fasta file.
+                    with open(fasta_file_path, "r") as fasta_fh:
+                        my_header = fasta_fh.readline().strip()
+                    fields = my_header.strip(">").split("|")
+                    SeqID = fields[0].split("=")[-1]
+                    SeqType = fields[1].split("=")[-1]
+                    themisto_ID_to_seq_metadata_dict[str(i)] = (SeqID, SeqType)
+            ## now write the pseudoalignment counts to file.
+            for replicon_set_string in sorted(pseudoalignment_read_count_dict.keys()):
+                read_count = pseudoalignment_read_count_dict[replicon_set_string]
+                replicon_ID_list = replicon_set_string.split()
+                if len(replicon_ID_list) == 0:
+                    SeqID = "NA"
+                    SeqType = "NA"
+                elif len(replicon_ID_list) == 1:
+                    my_replicon_ID = replicon_ID_list[0]
+                    SeqID, SeqType = themisto_ID_to_seq_metadata_dict[my_replicon_ID]
+                else:
+                    SeqID = "&".join([themisto_ID_to_seq_metadata_dict[replicon_ID][0] for replicon_ID in replicon_ID_list])
+                    SeqType = "multireplicon_sequence"
+                ## now write to file.
+                rowdata = ",".join([my_cur_AnnotationAccession, SeqID, SeqType, str(read_count)])
+                print(rowdata)
+                output_csv_fh.write(rowdata + "\n")
+    return
 
 
 ################################################################################
@@ -848,6 +901,7 @@ def pipeline_main():
     themisto_replicon_ref_dir = "../results/themisto_replicon_references/"
     themisto_replicon_index_dir = "../results/themisto_replicon_indices"
     themisto_pseudoalignment_dir = "../results/themisto_replicon_pseudoalignments"
+    themisto_results_csvfile_path = "../results/themisto-replicon-read-counts.csv"
     
 
     #####################################################################################
@@ -1095,13 +1149,14 @@ def pipeline_main():
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
             stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
 
+    #####################################################################################
     ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment results for analysis with R.
     stage_15_complete_file = "../results/stage15.done"
     if exists(stage_15_complete_file):
         print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
     else:
-        stage15_start_time = time.time()  # Record the start tim
-        summarize_themisto_pseudoalignment_results(themisto_pseudoalignment_dir)
+        stage15_start_time = time.time()  # Record the start time
+        summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
         quit()
         
         stage15_end_time = time.time()  # Record the end time
