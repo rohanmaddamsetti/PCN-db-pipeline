@@ -820,8 +820,9 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
         print(output_header)
         ## Iterate over the directories in themisto_pseudoalignment_dir.
         ## These contain the pseudoalignments for each genome.
-        themisto_pseudoalignment_result_dirs = [x for x in os.listdir(themisto_pseudoalignment_dir) if os.path.isdir(os.path.join(themisto_pseudoalignment_dir, x))]
+        themisto_pseudoalignment_result_dirs = [x for x in os.listdir(themisto_pseudoalignment_dir) if x.startswith("GCF") and os.path.isdir(os.path.join(themisto_pseudoalignment_dir, x))]
         for my_genome_dirname in themisto_pseudoalignment_result_dirs:
+            if not my_genome_dirname.startswith("GCF"): continue ## just an additional check to remove the temp directory.
             my_cur_pseudoalignment_dir_path = os.path.join(themisto_pseudoalignment_dir, my_genome_dirname)
             my_cur_AnnotationAccession = my_genome_dirname.strip("_genomic")
             ## initialize a dictionary to store the pseudoalignment counts.
