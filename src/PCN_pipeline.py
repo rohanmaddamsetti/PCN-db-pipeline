@@ -1158,8 +1158,6 @@ def pipeline_main():
     else:
         stage15_start_time = time.time()  # Record the start time
         summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
-        quit()
-        
         stage15_end_time = time.time()  # Record the end time
         stage15_execution_time = stage15_end_time - stage15_start_time
         Stage15TimeMessage = f"Stage 15 (themisto pseudoalignment summarization) execution time: {stage15_execution_time} seconds"
