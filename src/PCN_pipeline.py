@@ -40,6 +40,7 @@ import time
 import logging
 import glob
 import pprint
+import polars as pl
 
 
 ################################################################################
@@ -871,6 +872,54 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
     return
 
 
+def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv_file, naive_themisto_PCN_csv_file):
+    ## This function simply ignores multireplicon reads when estimating PCN.
+    
+    ## import the data as polars dataframes.
+    replicon_length_df = pl.read_csv(replicon_length_csv_file)
+    naive_themisto_read_count_df = pl.read_csv(themisto_results_csv_file).filter(
+        (pl.col("SeqType") == "chromosome") | (pl.col("SeqType") == "plasmid")).join(
+            replicon_length_df, on = "SeqID").with_columns(
+                (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+    
+    ## make a second dataframe containing just the sequencing coverage for the longest replicon for each genome.
+    ## to do so, first group by AnnotationAccession and compute maximum replicon_length within each group.
+    longest_replicon_df = naive_themisto_read_count_df.group_by(
+        "AnnotationAccession").agg(pl.col("replicon_length").max()).join(
+            ## now join with the original DataFrame to filter for rows with the maximum replicon_length
+            naive_themisto_read_count_df, on=["AnnotationAccession", "replicon_length"], how="inner").select(
+                pl.col("AnnotationAccession", "SequencingCoverage")).with_columns(
+                    pl.col("SequencingCoverage").alias("LongestRepliconCoverage")).select(
+                        pl.col("AnnotationAccession", "LongestRepliconCoverage"))
+
+    ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
+    naive_themisto_PCN_df = naive_themisto_read_count_df.join(
+        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
+        ## I don't know why. So remove the newly made AnnotationAccession_right column.
+        longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+            (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
+
+
+    ## now write the naive PCN estimates to file.
+    naive_themisto_PCN_df.write_csv(naive_themisto_PCN_csv_file)    
+    return
+
+
+def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv_file, simple_themisto_PCN_csv_file):
+    ## This function divides multireplicon reads equally among the relevant replicons.
+
+    ## import the data as polars dataframes.
+    replicon_length_df = pl.read_csv(replicon_length_csv_file)
+
+    themisto_read_count_df = pl.read_csv(themisto_results_csv_file)
+
+    print(themisto_read_count_df)
+    
+    #.filter(
+    #    (pl.col("SeqType") == "chromosome") | (pl.col("SeqType") == "plasmid")).join(
+    #        replicon_length_df, on = "SeqID").with_columns(
+    #           (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+
 ################################################################################
 
 def pipeline_main():
@@ -903,6 +952,12 @@ def pipeline_main():
     themisto_replicon_index_dir = "../results/themisto_replicon_indices"
     themisto_pseudoalignment_dir = "../results/themisto_replicon_pseudoalignments"
     themisto_results_csvfile_path = "../results/themisto-replicon-read-counts.csv"
+
+    ## this file contains estimates that throw out multireplicon reads.
+    naive_themisto_PCN_csv_file = "../results/naive-themisto-PCN-estimates.csv"
+    ## this file contains estimates that equally apportion multireplicon reads
+    ## to the relevant plasmids and chromosomes.
+    simple_themisto_PCN_csv_file = "../results/simple-themisto-PCN-estimates.csv"
     
 
     #####################################################################################
@@ -1151,7 +1206,7 @@ def pipeline_main():
             stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
 
     #####################################################################################
-    ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment results for analysis with R.
+    ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment read counts.
     stage_15_complete_file = "../results/stage15.done"
     if exists(stage_15_complete_file):
         print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
@@ -1165,6 +1220,26 @@ def pipeline_main():
         logging.info(Stage15TimeMessage)
         with open(stage_15_complete_file, "w") as stage_15_complete_log:
             stage_15_complete_log.write("stage 15 (themisto pseudoalignment summarization) finished successfully.\n")
+    #####################################################################################
+    ## Stage 16: estimate plasmid copy numbers using the themisto read counts.
+    stage_16_complete_file = "../results/stage16.done"
+    if exists(stage_16_complete_file):
+        print(f"{stage_16_complete_file} exists on disk-- skipping stage 16.")
+    else:
+        stage16_start_time = time.time()  # Record the start time
+        ## Naive PCN calculation, ignoring multireplicon reads.
+        naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
+        ## Simple PCN calculation, evenly distributing multireplicon reads over chromosomes and plasmids.
+        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)
+        quit()
+        
+        stage16_end_time = time.time()  # Record the end time
+        stage16_execution_time = stage16_end_time - stage16_start_time
+        Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds"
+        print(Stage16TimeMessage)
+        logging.info(Stage16TimeMessage)
+        with open(stage_16_complete_file, "w") as stage_16_complete_log:
+            stage_16_complete_log.write("stage 15 (themisto PCN estimates) finished successfully.\n")
 
     
     return
