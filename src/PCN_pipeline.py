@@ -906,7 +906,6 @@ def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv
         longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
             (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
 
-
     ## now write the naive PCN estimates to file.
     naive_themisto_PCN_df.write_csv(naive_themisto_PCN_csv_file)    
     return
@@ -999,8 +998,10 @@ def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_cs
         longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
             (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
 
+    ## now write the simple PCN estimates to file.
     print(simple_themisto_PCN_df)
-    return simple_themisto_PCN_df
+    simple_themisto_PCN_df.write_csv(simple_themisto_PCN_csv_file)
+    return
 
 
 ################################################################################
