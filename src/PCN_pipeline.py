@@ -13,7 +13,7 @@ TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinfor
 Currently, the themisto analysis ignores reads that map to multiple replicons. However,
 in principle we can leverage this information in two ways.
 1) first, we should be able to infer the length of shared regions, based on the number of
-reads in the intersection (this is a linear inverse problem). This will give us the most
+reads in the intersection (this is a nonlinear inverse problem). This will give us the most
 accurate estimates of PCN copy number since we can use all the data. However,
 I need to figure out an analytical/numerical solution, and code up an implementation.
 
@@ -255,7 +255,6 @@ def generate_gene_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
             SeqType = None
             for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
                 SeqID = record.id
-                print("RECORD DESCRIPTION", record.description)## DEBUGGING
                 if "chromosome" in record.description or i == 0:
                     ## IMPORTANT: we assume here that the first record is a chromosome.
                     SeqType = "chromosome"
@@ -622,18 +621,25 @@ def measure_NCBI_replicon_copy_numbers(kallisto_replicon_quant_results_dir, repl
 
 def tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file):
     with open(replicon_length_csv_file, 'w') as outfh:
-        header = "AnnotationAccession,SeqID,replicon_length\n"
+        header = "AnnotationAccession,SeqID,SeqType,replicon_length\n"
         outfh.write(header)
         for gbk_gz in os.listdir(refgenomes_dir):
             if not gbk_gz.endswith(".gbff.gz"): continue
             annotation_accession = gbk_gz.split("_genomic.gbff")[0]
             infile = os.path.join(refgenomes_dir, gbk_gz)
             with gzip.open(infile, "rt") as genome_fh:
-                for replicon in SeqIO.parse(genome_fh, "gb"):
+                for i, replicon in enumerate(SeqIO.parse(genome_fh, "gb")):
                     SeqID = replicon.id
+                    if "chromosome" in replicon.description or i == 0:
+                        ## IMPORTANT: we assume here that the first record is a chromosome.
+                        SeqType = "chromosome"
+                    elif "plasmid" in replicon.description:
+                        SeqType = "plasmid"
+                    else:
+                        continue
                     replicon_length = str(len(replicon))
                     ## now write out the data for the replicon.
-                    row = ','.join([annotation_accession, SeqID, replicon_length])
+                    row = ','.join([annotation_accession, SeqID, SeqType, replicon_length])
                     outfh.write(row + "\n")
     return
 
@@ -874,7 +880,8 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
 
 def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv_file, naive_themisto_PCN_csv_file):
     ## This function simply ignores multireplicon reads when estimating PCN.
-    
+    ##Also note that this function omits replicons with zero mapped reads.
+    print("running naive themisto PCN estimation (ignoring multireplicon reads)")
     ## import the data as polars dataframes.
     replicon_length_df = pl.read_csv(replicon_length_csv_file)
     naive_themisto_read_count_df = pl.read_csv(themisto_results_csv_file).filter(
@@ -905,20 +912,96 @@ def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv
     return
 
 
+def assign_multireplicon_reads(genome_df):
+    ## create a new data frame with just chromosome and plasmid data.
+    updated_df = genome_df.filter(
+        (pl.col("SeqType") == "chromosome") | (pl.col("SeqType") == "plasmid")).with_columns(
+            ## cast the ReadCount to floats, and
+            ## replace null values in the ReadCount columns with floating-point zeros.
+            pl.col("ReadCount").cast(pl.Float64).fill_null(pl.lit(0.0)))
+
+    ## get the multireplicon data.
+    multireplicon_df = genome_df.filter(pl.col("SeqType") == "multireplicon_sequence")
+    ## iterate over each multireplicon read set.
+    for row_dict in multireplicon_df.iter_rows(named=True):
+        seq_id_list = row_dict["SeqID"].split("&")
+        read_count = row_dict["ReadCount"]
+        num_reads_to_assign_to_each_replicon = float(read_count) / float(len(seq_id_list))
+        ## iterate over each replicon in this multireplicon read set.
+        for seq_id in seq_id_list:
+            ## update the relevant values in the dataframe
+            old_seqID_readcount = updated_df.filter(updated_df["SeqID"] == seq_id)["ReadCount"][0]
+            new_seqID_readcount = old_seqID_readcount + num_reads_to_assign_to_each_replicon
+            ## a kludgy hacky solution, but works:
+            ## create a new column called temp, that has the new_seqID_readcount for the given SeqID,
+            ## and zeros elsewhere in the column.
+            ## then make a new column called updatedReadCount that takes the maximum of ReadCount and temp.
+            ## then drop ReadCount and temp and rename updatedReadCount as ReadCount.
+            updated_df = updated_df.with_columns(
+                "ReadCount",
+                pl.when(pl.col("SeqID") == seq_id).then(new_seqID_readcount).otherwise(pl.lit(0.0)).alias("temp")
+            ).with_columns(pl.max_horizontal("ReadCount", "temp").alias("updatedReadCount")).select(
+                pl.col("*").exclude(["ReadCount", "temp"])).rename({"updatedReadCount":"ReadCount"})
+    return updated_df
+
+
 def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv_file, simple_themisto_PCN_csv_file):
     ## This function divides multireplicon reads equally among the relevant replicons.
 
+    ## Use a split-apply-combine strategy to break the big dataframe into smaller dataframes for each genome.
+    ## Then pass each data frame to a function that assigns multi-replicon reads to each of the replicons,
+    ## and produces a data frame that only has plasmids and chromosomes with the updated read counts.
+    ## then merge all these pieces together into a big dataframe.
+    ## finally, calculate PCN with this updated dataframe.
+    print("running simple themisto PCN estimation (partitioning multireplicon reads equally among replicons)")
     ## import the data as polars dataframes.
     replicon_length_df = pl.read_csv(replicon_length_csv_file)
-
     themisto_read_count_df = pl.read_csv(themisto_results_csv_file)
 
-    print(themisto_read_count_df)
-    
-    #.filter(
-    #    (pl.col("SeqType") == "chromosome") | (pl.col("SeqType") == "plasmid")).join(
-    #        replicon_length_df, on = "SeqID").with_columns(
-    #           (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+    ## initialize the list of dataframes for each genome with updated read counts.
+    list_of_updated_dfs = []
+    ## iterate over the data for each genome
+    for annotation_accession_group, genome_reads_df in themisto_read_count_df.group_by(["AnnotationAccession"]):
+        ## awkward notation to avoid deprecated behavior for iterating over groups in polars.
+        annotation_accession = annotation_accession_group[0]        
+        ## IMPORTANT: some replicons may not have any reads assigned to them,
+        ## say if they are completely contained in another replicon.
+        ## To handle this case, we need to initialize genome_df to have all the replicons,
+        ## with zeros assigned to ReadCount for replicons that are not present in genome_reads_df.
+        ## We can get the missing replicons from replicon_length_df.
+        genome_df = replicon_length_df.filter(pl.col("AnnotationAccession") == annotation_accession).join(
+            genome_reads_df, on = ["AnnotationAccession","SeqID","SeqType"], how="outer_coalesce")
+        
+        ## now assign multireplicon reads equally among the replicons that they match.
+        updated_df = assign_multireplicon_reads(genome_df)
+        list_of_updated_dfs.append(updated_df)
+
+    ## now merge the list of updated data frames.
+    simple_themisto_read_count_df =  pl.concat(list_of_updated_dfs).join(
+        ## and calculate SequencingCoverage
+        replicon_length_df, on = "SeqID").with_columns(
+            (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+
+    ## make a second dataframe containing just the sequencing coverage for the longest replicon for each genome.
+    ## to do so, first group by AnnotationAccession and compute maximum replicon_length within each group.
+    longest_replicon_df = simple_themisto_read_count_df.group_by(
+        "AnnotationAccession").agg(pl.col("replicon_length").max()).join(
+            ## now join with the original DataFrame to filter for rows with the maximum replicon_length
+           simple_themisto_read_count_df, on=["AnnotationAccession", "replicon_length"], how="inner").select(
+                pl.col("AnnotationAccession", "SequencingCoverage")).with_columns(
+                    pl.col("SequencingCoverage").alias("LongestRepliconCoverage")).select(
+                        pl.col("AnnotationAccession", "LongestRepliconCoverage"))
+
+    ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
+    simple_themisto_PCN_df = simple_themisto_read_count_df.join(
+        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
+        ## I don't know why. So remove the newly made AnnotationAccession_right column.
+        longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+            (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
+
+    print(simple_themisto_PCN_df)
+    return simple_themisto_PCN_df
+
 
 ################################################################################
 
@@ -1230,9 +1313,7 @@ def pipeline_main():
         ## Naive PCN calculation, ignoring multireplicon reads.
         naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
         ## Simple PCN calculation, evenly distributing multireplicon reads over chromosomes and plasmids.
-        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)
-        quit()
-        
+        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)        
         stage16_end_time = time.time()  # Record the end time
         stage16_execution_time = stage16_end_time - stage16_start_time
         Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds"
