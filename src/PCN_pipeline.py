@@ -10,8 +10,9 @@ conda activate PCNdb-env
 Currently, this pipeline only analyzes Illumina short-read data.
 TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
 
-Currently, the themisto analysis ignores reads that map to multiple replicons. However,
-in principle we can leverage this information in two ways.
+CRITICAL TODO: utilize reads shared among replicons to more accurately infer PCN.
+In principle we can leverage reads mapping to multiple replicons in two ways.
+
 1) first, we should be able to infer the length of shared regions, based on the number of
 reads in the intersection (this is a nonlinear inverse problem). This will give us the most
 accurate estimates of PCN copy number since we can use all the data. However,
@@ -21,7 +22,6 @@ I need to figure out an analytical/numerical solution, and code up an implementa
 shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
 for instance, determining the extent of HGT within genomes between replicons.
 
-CRITICAL TODO: utilize reads shared among replicons to more accurately infer PCN.
 
 """
 
