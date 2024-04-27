@@ -4,8 +4,12 @@
 PCN_pipeline.py by Maggie Wilson and Rohan Maddamsetti.
 
 For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $PATH.
-On DCC, run the following to get these programs into the path:
+On the Duke Compute Cluster (DCC), run the following to get these programs into the path:
 conda activate PCNdb-env
+
+IMPORTANT: this script assumes it is being run on DCC if sys.platform == "linux".
+This means that users on a linux machine will need to modify a couple functions if they
+are running this code locally, and cannot use slurm to submit many jobs in parallel.
 
 Currently, this pipeline only analyzes Illumina short-read data.
 TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
@@ -21,7 +25,6 @@ I need to figure out an analytical/numerical solution, and code up an implementa
 2) we can use reads that map to multiple replicons to infer the size of duplicated/repeat regions
 shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
 for instance, determining the extent of HGT within genomes between replicons.
-
 
 """
 
