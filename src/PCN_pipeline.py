@@ -44,6 +44,7 @@ import logging
 import glob
 import pprint
 import polars as pl
+from tqdm import tqdm
 
 
 ################################################################################
@@ -1007,6 +1008,72 @@ def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_cs
     return
 
 
+def make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file):
+    with open(gbk_annotation_file,"w") as out_fh:
+        header = "Annotation_Accession,host,isolation_source\n"
+        out_fh.write(header)
+
+        gbk_files = [x for x in os.listdir(reference_genome_dir) if x.endswith("_genomic.gbff.gz")]
+
+        for x in tqdm(gbk_files):
+            gbk_path = reference_genome_dir + x
+            annotation_accession = x.split("_genomic.gbff.gz")[0]
+            with gzip.open(gbk_path,'rt') as gbk_fh:
+                host = "NA"
+                isolation_source = "NA"
+                ## use a buffer to store the line, to handle cases where
+                ## the annotation spans multiple lines.
+                in_host_field = False
+                in_isolation_source_field = False
+                line_buffer = []
+                for line in gbk_fh:
+                    line = line.strip()
+                    ## We're going to delete all double-quote characters,
+                    ## and replace all commas with semicolons so that they
+                    ## don't clash with the csv format.
+                    ## BUT: make sure that the line terminates with a double-quote--
+                    ## otherwise, we need to slurp up data from multiple lines.
+                    if line.startswith("/host"):
+                        line_annot = line.split('=')[-1].replace('\"','').replace(',',';')
+                        if line.endswith('"'):
+                            host = line_annot
+                        else: ## have to look at the next line too.
+                            line_buffer.append(line_annot)
+                            in_host_field = True
+                    elif in_host_field and len(line_buffer):
+                        line_annot = line.replace('\"','').replace(',',';')
+                        line_buffer.append(line_annot)
+                        if line.endswith('"'): ## flush the line buffer and reset the flag.
+                            host = ' '.join(line_buffer)
+                            line_buffer = []
+                            in_host_field = False
+                    elif line.startswith("/isolation_source"):
+                        line_annot = line.split('=')[-1].replace('\"','').replace(',',';')
+                        if line.endswith('"'):
+                            isolation_source = line_annot
+                        else: ## then have to look at next line too.
+                            line_buffer.append(line_annot)
+                            in_isolation_source_field = True
+                    elif in_isolation_source_field and len(line_buffer):
+                        line_annot = line.replace('\"','').replace(',',';')
+                        line_buffer.append(line_annot)
+                        if line.endswith('"'): ## flush the line buffer and reset flag.
+                            isolation_source = ' '.join(line_buffer)
+                            line_buffer = []
+                            in_isolation_source_field = False
+                    ## break if we have the annotation.
+                    if (host != "NA") and (isolation_source != "NA"): break
+                    ## also break if we're looking at gene annotation since
+                    ## there's insufficient isolate annotation in this file.
+                    if line.startswith("/gene"): break ## NOTE: has to be '/gene'
+                    ## because we don't want to match the Genome Annotation Data in the
+                    ## COMMENT field of the Genbank metadata.
+                    if line.startswith("ORIGIN"): break ## break if we got to the first fasta seq
+                row = ','.join([annotation_accession, host, isolation_source]) + '\n'
+                out_fh.write(row)
+    return
+
+
 ################################################################################
 
 def pipeline_main():
@@ -1045,6 +1112,8 @@ def pipeline_main():
     ## this file contains estimates that equally apportion multireplicon reads
     ## to the relevant plasmids and chromosomes.
     simple_themisto_PCN_csv_file = "../results/simple-themisto-PCN-estimates.csv"
+
+    gbk_annotation_file = "../results/gbk-annotation-table.csv"
     
 
     #####################################################################################
@@ -1061,6 +1130,7 @@ def pipeline_main():
         Stage1TimeMessage = f"Stage 1 execution time: {RunID_table_execution_time} seconds"
         print(Stage1TimeMessage)
         logging.info(Stage1TimeMessage)
+        quit()
 
     
     #####################################################################################
@@ -1077,7 +1147,7 @@ def pipeline_main():
         fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir)
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
-
+        quit()
     
     #####################################################################################
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
@@ -1094,7 +1164,7 @@ def pipeline_main():
         logging.info(Stage3TimeMessage)
         with open(stage_3_complete_file, "w") as stage_3_complete_log:
             stage_3_complete_log.write("SRA read data downloaded successfully.\n")
-
+        quit()
     
     #####################################################################################   
     ## Stage 4: Make gene-level FASTA reference files for copy number estimation for genes in each genome using kallisto.
@@ -1111,7 +1181,7 @@ def pipeline_main():
         logging.info(Stage4TimeMessage)
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
             stage_4_complete_log.write("Gene-level FASTA reference sequences for kallisto finished successfully.\n")
-
+        quit()
 
     ## Stage 5: Make replicon-level FASTA reference files for copy number estimation using kallisto.
     stage_5_complete_file = "../results/stage5.done"
@@ -1128,6 +1198,7 @@ def pipeline_main():
         logging.info(Stage5TimeMessage)
         with open(stage_5_complete_file, "w") as stage_5_complete_log:
             stage_5_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
+        quit()
 
     #####################################################################################
     ## Stage 6: Make gene-level kallisto index files for each genome.
@@ -1144,7 +1215,7 @@ def pipeline_main():
         logging.info(Stage6TimeMessage)
         with open(stage_6_complete_file, "w") as stage_6_complete_log:
             stage_6_complete_log.write("kallisto gene-index file construction finished successfully.\n")
-
+        quit()
 
     ## Stage 7: Make replicon-level kallisto index files for each genome.
     stage_7_complete_file = "../results/stage7.done"
@@ -1160,7 +1231,7 @@ def pipeline_main():
         logging.info(Stage7TimeMessage)
         with open(stage_7_complete_file, "w") as stage_7_complete_log:
             stage_7_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
-
+        quit()
 
     #####################################################################################
     ## Stage 8: run kallisto quant on all genome data, on both gene-level and replicon-level indices.
@@ -1182,7 +1253,8 @@ def pipeline_main():
         logging.info(Stage8TimeMessage)
         with open(stage_8_complete_file, "w") as stage_8_complete_log:
             stage_8_complete_log.write("kallisto quant, gene-level and replicon-level finished successfully.\n")
-
+        quit()
+            
     #####################################################################################
     ## Stage 9: make a table of the estimated copy number and position for all genes in all chromosomes
     ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
@@ -1204,6 +1276,7 @@ def pipeline_main():
         logging.info(Stage9TimeMessage)
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
             stage_9_complete_log.write("stage 9 (tabulating all gene copy numbers) finished successfully.\n")
+        quit()
 
     #####################################################################################
     ## Stage 10: make a table of the estimated copy number for all chromosomes and plasmids.
@@ -1222,6 +1295,7 @@ def pipeline_main():
         logging.info(Stage10TimeMessage)
         with open(stage_10_complete_file, "w") as stage_10_complete_log:
             stage_10_complete_log.write("stage 10 (tabulating all replicon copy numbers) finished successfully.\n")
+        quit()
 
     #####################################################################################
     ## Stage 11: tabulate the length of all chromosomes and plasmids.
@@ -1238,7 +1312,8 @@ def pipeline_main():
         logging.info(Stage11TimeMessage)
         with open(stage_11_complete_file, "w") as stage_11_complete_log:
             stage_11_complete_log.write("stage 11 (tabulating all replicon lengths) finished successfully.\n")
-
+        quit()
+            
     #####################################################################################
     ## Stage 12: Make FASTA input files for Themisto.
     ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
@@ -1257,7 +1332,8 @@ def pipeline_main():
         logging.info(Stage12TimeMessage)
         with open(stage_12_complete_file, "w") as stage_12_complete_log:
             stage_12_complete_log.write("stage 12 (making fasta references for themisto) finished successfully.\n")
-
+        quit()
+        
     #####################################################################################
     ## Stage 13: Build separate Themisto indices for each genome.
     stage_13_complete_file = "../results/stage13.done"
@@ -1273,7 +1349,8 @@ def pipeline_main():
         logging.info(Stage13TimeMessage)
         with open(stage_13_complete_file, "w") as stage_13_complete_log:
             stage_13_complete_log.write("stage 13 (making indices for themisto) finished successfully.\n")
-
+        quit()
+        
     #####################################################################################
     ## Stage 14: Pseudoalign reads for each genome against each Themisto index.
 
@@ -1291,7 +1368,8 @@ def pipeline_main():
         logging.info(Stage14TimeMessage)
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
             stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
-
+        quit()
+        
     #####################################################################################
     ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment read counts.
     stage_15_complete_file = "../results/stage15.done"
@@ -1307,6 +1385,8 @@ def pipeline_main():
         logging.info(Stage15TimeMessage)
         with open(stage_15_complete_file, "w") as stage_15_complete_log:
             stage_15_complete_log.write("stage 15 (themisto pseudoalignment summarization) finished successfully.\n")
+        quit()
+        
     #####################################################################################
     ## Stage 16: estimate plasmid copy numbers using the themisto read counts.
     stage_16_complete_file = "../results/stage16.done"
@@ -1324,9 +1404,28 @@ def pipeline_main():
         print(Stage16TimeMessage)
         logging.info(Stage16TimeMessage)
         with open(stage_16_complete_file, "w") as stage_16_complete_log:
-            stage_16_complete_log.write("stage 15 (themisto PCN estimates) finished successfully.\n")
+            stage_16_complete_log.write("stage 16 (themisto PCN estimates) finished successfully.\n")
+        quit()
 
-    
+        #####################################################################################
+    ## Stage 17: make gbk ecological annotation file.
+    stage_17_complete_file = "../results/stage17.done"
+    if exists(stage_17_complete_file):
+        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
+    else:
+        stage17_start_time = time.time()  # Record the start time
+        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
+        stage17_end_time = time.time()  # Record the end time
+        stage17_execution_time = stage17_end_time - stage17_start_time
+        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds"
+        print(Stage17TimeMessage)
+        logging.info(Stage17TimeMessage)
+        with open(stage_17_complete_file, "w") as stage_17_complete_log:
+            stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
+        quit()
+
+
+        
     return
 
 
