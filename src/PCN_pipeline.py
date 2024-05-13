@@ -152,9 +152,17 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
         my_md5_cmd = "md5sum" ## but run md5sum on DCC (linux)
     else:
         raise AssertionError("UNKNOWN PLATFORM")
+
     ## run md5 on the local file and get the output.
     md5_call = subprocess.run([my_md5_cmd, gbff_gz_file], capture_output=True, text=True)
-    my_md5_checksum = md5_call.stdout.split()[-1].strip()
+
+    if sys.platform == "darwin": ## then the checksum is the LAST 'word' in the output.
+        my_md5_checksum = md5_call.stdout.split()[-1].strip()
+    elif sys.platform == "linux": ## then the checksum is the FIRST 'word' in the output.
+        my_md5_checksum = md5_call.stdout.split()[0].strip()
+    else:
+        raise AssertionError("UNKNOWN PLATFORM")
+
     ## verify that the checksums match.
     return my_md5_checksum == my_target_checksum
 
@@ -199,11 +207,13 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
                 print("fetching reference genome")
                 print(gbff_ftp_path)
                 print(gbff_gz_file)
+                print()
                 urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
                 print("fetching md5 file.")
                 print(md5_ftp_path)
                 print(md5_file)
+                print()
+                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
             except urllib.error.URLError:
                 ## if some problem happens, try again.
                 gbff_fetch_attempts -= 1
