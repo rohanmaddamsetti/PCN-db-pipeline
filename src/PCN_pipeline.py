@@ -196,8 +196,14 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
         
         while not gbff_fetched and gbff_fetch_attempts:
             try:
+                print("fetching reference genome")
+                print(gbff_ftp_path)
+                print(gbff_gz_file)
                 urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)                
+                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
+                print("fetching md5 file.")
+                print(md5_ftp_path)
+                print(md5_file)
             except urllib.error.URLError:
                 ## if some problem happens, try again.
                 gbff_fetch_attempts -= 1
@@ -1428,26 +1434,25 @@ def pipeline_main():
         quit()
 
     #####################################################################################
-    ## Multi-read mapping: 
+    ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
     #####################################################################################
-    ## Stage 18: make gbk ecological annotation file.
-    stage_17_complete_file = "../results/stage17.done"
-    if exists(stage_17_complete_file):
-        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
-    else:
-        stage17_start_time = time.time()  # Record the start time
-        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
-        stage17_end_time = time.time()  # Record the end time
-        stage17_execution_time = stage17_end_time - stage17_start_time
-        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds"
-        print(Stage17TimeMessage)
-        logging.info(Stage17TimeMessage)
-        with open(stage_17_complete_file, "w") as stage_17_complete_log:
-            stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
-        quit()
+    ## Stage 18: filter fastq reads for multireads.
+    #stage_18_complete_file = "../results/stage18.done"
+    #if exists(stage_18_complete_file):
+    #    print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
+    #else:
+    #    stage18_start_time = time.time()  # Record the start time
+        ## code is executed here
+    #    stage18_end_time = time.time()  # Record the end time
+    #    stage18_execution_time = stage18_end_time - stage18_start_time
+    #    Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds"
+    #    print(Stage18TimeMessage)
+    #    logging.info(Stage18TimeMessage)
+    #    with open(stage_18_complete_file, "w") as stage_18_complete_log:
+    #        stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
+    #    quit()
 
-
-        
+    
     return
 
 
