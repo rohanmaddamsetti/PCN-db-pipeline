@@ -17,15 +17,9 @@ TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinfor
 CRITICAL TODO: utilize reads shared among replicons (multireads) to more accurately infer PCN.
 In principle we can leverage reads mapping to multiple replicons (multireads) in two ways.
 
-1) estimate PCN more accurately, using an iterative algorithm.
-A) filter fastq reads for multireads, using themisto output.
-B) for each multiread, determine the number of matching sites on each replicon.
-C) take the naive PCN estimate as initial guess.
-D) 
+TODO 1) estimate PCN more accurately, using the PIRA algorithm that Lingchong and I devised.
 
-use minimap2 or mmseqs2  to align multireads to chromosomes and plasmids to 
-
-2) we can use multireads to infer the size of duplicated/repeat regions
+TODO 2) we can use multireads to infer the size of duplicated/repeat regions
 shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
 for instance, determining the extent of HGT within genomes between replicons.
 
