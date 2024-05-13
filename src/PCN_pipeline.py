@@ -154,7 +154,7 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
         raise AssertionError("UNKNOWN PLATFORM")
     ## run md5 on the local file and get the output.
     md5_call = subprocess.run([my_md5_cmd, gbff_gz_file], capture_output=True, text=True)
-    my_md5_checksum = md5_call.stdout.split("=")[-1].strip()
+    my_md5_checksum = md5_call.stdout.split()[-1].strip()
     ## verify that the checksums match.
     return my_md5_checksum == my_target_checksum
 
