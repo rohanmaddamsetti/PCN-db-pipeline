@@ -1007,7 +1007,7 @@ na_isolation_sources = [
 #######################################################################################
 
 
-print("Annotation_Accession,host,isolation_source,Annotation")  ## print header
+print("AnnotationAccession,host,isolation_source,Annotation")  ## print header
 
 with open("../results/gbk-annotation-table.csv", "r") as annotation_fh:
     for i, line in enumerate(annotation_fh):

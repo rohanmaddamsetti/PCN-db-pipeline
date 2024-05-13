@@ -14,15 +14,18 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 Currently, this pipeline only analyzes Illumina short-read data.
 TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
 
-CRITICAL TODO: utilize reads shared among replicons to more accurately infer PCN.
-In principle we can leverage reads mapping to multiple replicons in two ways.
+CRITICAL TODO: utilize reads shared among replicons (multireads) to more accurately infer PCN.
+In principle we can leverage reads mapping to multiple replicons (multireads) in two ways.
 
-1) first, we should be able to infer the length of shared regions, based on the number of
-reads in the intersection (this is a nonlinear inverse problem). This will give us the most
-accurate estimates of PCN copy number since we can use all the data. However,
-I need to figure out an analytical/numerical solution, and code up an implementation.
+1) estimate PCN more accurately, using an iterative algorithm.
+A) filter fastq reads for multireads, using themisto output.
+B) for each multiread, determine the number of matching sites on each replicon.
+C) take the naive PCN estimate as initial guess.
+D) 
 
-2) we can use reads that map to multiple replicons to infer the size of duplicated/repeat regions
+use minimap2 or mmseqs2  to align multireads to chromosomes and plasmids to 
+
+2) we can use multireads to infer the size of duplicated/repeat regions
 shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
 for instance, determining the extent of HGT within genomes between replicons.
 
@@ -1407,8 +1410,27 @@ def pipeline_main():
             stage_16_complete_log.write("stage 16 (themisto PCN estimates) finished successfully.\n")
         quit()
 
-        #####################################################################################
+    #####################################################################################
     ## Stage 17: make gbk ecological annotation file.
+    stage_17_complete_file = "../results/stage17.done"
+    if exists(stage_17_complete_file):
+        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
+    else:
+        stage17_start_time = time.time()  # Record the start time
+        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
+        stage17_end_time = time.time()  # Record the end time
+        stage17_execution_time = stage17_end_time - stage17_start_time
+        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds"
+        print(Stage17TimeMessage)
+        logging.info(Stage17TimeMessage)
+        with open(stage_17_complete_file, "w") as stage_17_complete_log:
+            stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Multi-read mapping: 
+    #####################################################################################
+    ## Stage 18: make gbk ecological annotation file.
     stage_17_complete_file = "../results/stage17.done"
     if exists(stage_17_complete_file):
         print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
