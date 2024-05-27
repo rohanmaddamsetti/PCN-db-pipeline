@@ -1152,6 +1152,7 @@ def pipeline_main():
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
     ## prokaryotes-with-plasmids.txt file.
+    ## NOTE: as of May 27 2024, 4540 reference genomes should be downloaded.
     stage_2_complete_file = "../results/stage2.done"
     reference_genome_log_file = "../results/reference_genome_fetching_log.txt"
     if exists(stage_2_complete_file):
