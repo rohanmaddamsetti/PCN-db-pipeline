@@ -161,7 +161,7 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
     return my_md5_checksum == my_target_checksum
 
 
-def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir):
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
     ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
     ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
 
@@ -175,55 +175,52 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     ## now look up the FTP URLs for each refseq id.
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
-    for ftp_path in ftp_paths:
-        ## note that the format of this accession is {refseqid}_{assemblyid}.
-        my_full_accession = basename(ftp_path)
-        my_base_filename = my_full_accession + "_genomic.gbff.gz"
-        ## files on the NCBI FTP site to download
-        gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
-        md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
-        ## local paths to download these files
-        gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
-        md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
-        
-        if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-            if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                continue
-            else:
-                os.remove(gbff_gz_file)
-                os.remove(md5_file)
-        
-        gbff_fetch_attempts = 5
-        gbff_fetched = False
-        
-        while not gbff_fetched and gbff_fetch_attempts:
-            try:
-                print("fetching reference genome")
-                print(gbff_ftp_path)
-                print(gbff_gz_file)
-                print()
-                urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                print("fetching md5 file.")
-                print(md5_ftp_path)
-                print(md5_file)
-                print()
-                urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
-            except urllib.error.URLError:
-                ## if some problem happens, try again.
-                gbff_fetch_attempts -= 1
-                ## delete the corrupted files if they exist.
-                if exists(gbff_gz_file):
-                    os.remove(gbff_gz_file)
-                if exists(md5_file):
-                    os.remove(md5_file)
-            ## if we are here, then assume the try block worked.
+    with open(log_file, 'w') as log_fh: ## for tracking which genomes are downloaded and which failed.
+        for ftp_path in tqdm(ftp_paths):
+            ## note that the format of this accession is {refseqid}_{assemblyid}.
+            my_full_accession = basename(ftp_path)
+            my_base_filename = my_full_accession + "_genomic.gbff.gz"
+            ## files on the NCBI FTP site to download
+            gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
+            md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
+            ## local paths to download these files
+            gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
+            md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
+
             if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
                 if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                    gbff_fetched = True  ## assume success if the checksum matches,
-                    gbff_fetch_attempts = 0  ## and don't try again.
+                    print(f"{gbff_gz_file} SUCCEEDED.", file=log_fh)
+                    continue
                 else:
                     os.remove(gbff_gz_file)
                     os.remove(md5_file)
+
+            gbff_fetch_attempts = 5
+            gbff_fetched = False
+
+            while not gbff_fetched and gbff_fetch_attempts:
+                try:
+                    urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
+                    urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
+                except urllib.error.URLError:
+                    ## if some problem happens, try again.
+                    gbff_fetch_attempts -= 1
+                    if gbff_fetch_attempts == 0:
+                        print(f"{gbff_gz_file} FAILED.", file=log_fh)
+                    ## delete the corrupted files if they exist.
+                    if exists(gbff_gz_file):
+                        os.remove(gbff_gz_file)
+                    if exists(md5_file):
+                        os.remove(md5_file)
+                ## if we are here, then assume the try block worked.
+                if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
+                    if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                        print(f"{gbff_gz_file} SUCCEEDED.", file=log_fh)
+                        gbff_fetched = True  ## assume success if the checksum matches,
+                        gbff_fetch_attempts = 0  ## and don't try again.
+                    else:
+                        os.remove(gbff_gz_file)
+                        os.remove(md5_file)
     return
  
 
@@ -1087,6 +1084,10 @@ def make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file):
     return
 
 
+def filter_fastq_files_for_multireads():
+    pass
+
+
 ################################################################################
 
 def pipeline_main():
@@ -1152,12 +1153,13 @@ def pipeline_main():
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
     ## prokaryotes-with-plasmids.txt file.
     stage_2_complete_file = "../results/stage2.done"
+    reference_genome_log_file = "../results/reference_genome_fetching_log.txt"
     if exists(stage_2_complete_file):
         print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
     else:
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
         ## now download the reference genomes.
-        fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir)
+        fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir, reference_genome_log_file)
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
         quit()
@@ -1441,20 +1443,24 @@ def pipeline_main():
     ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
     #####################################################################################
     ## Stage 18: filter fastq reads for multireads.
-    #stage_18_complete_file = "../results/stage18.done"
-    #if exists(stage_18_complete_file):
-    #    print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
-    #else:
-    #    stage18_start_time = time.time()  # Record the start time
-        ## code is executed here
-    #    stage18_end_time = time.time()  # Record the end time
-    #    stage18_execution_time = stage18_end_time - stage18_start_time
-    #    Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds"
-    #    print(Stage18TimeMessage)
-    #    logging.info(Stage18TimeMessage)
-    #    with open(stage_18_complete_file, "w") as stage_18_complete_log:
-    #        stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
-    #    quit()
+    stage_18_complete_file = "../results/stage18.done"
+    if exists(stage_18_complete_file):
+        print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
+    else:
+        stage18_start_time = time.time()  # Record the start time
+
+        filter_fastq_files_for_multireads()
+        quit()
+
+        
+        stage18_end_time = time.time()  # Record the end time
+        stage18_execution_time = stage18_end_time - stage18_start_time
+        Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds"
+        print(Stage18TimeMessage)
+        logging.info(Stage18TimeMessage)
+        with open(stage_18_complete_file, "w") as stage_18_complete_log:
+            stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
+        quit()
 
     
     return
