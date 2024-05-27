@@ -171,7 +171,8 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     ## remove the header from the imported data.
     RunID_table_data = RunID_table_lines[1:]
     ## get the first column to get all refseq_ids of interest.
-    refseq_ids = [line.split(",")[0] for line in RunID_table_data]
+    ## turn into a set to remove duplicates (there can be multiple SRA datasets per reference genome).
+    refseq_ids = set([line.split(",")[0] for line in RunID_table_data])
     ## now look up the FTP URLs for each refseq id.
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
