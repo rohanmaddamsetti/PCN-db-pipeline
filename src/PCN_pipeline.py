@@ -12,7 +12,7 @@ This means that users on a linux machine will need to modify a couple functions 
 are running this code locally, and cannot use slurm to submit many jobs in parallel.
 
 Currently, this pipeline only analyzes Illumina short-read data.
-TODO: analyze long-read data as well, using Themisto (published 2023 in Bioinformatics).
+Empirically, long-read data do not give accurate PCN information.
 
 CRITICAL TODO: utilize reads shared among replicons (multireads) to more accurately infer PCN.
 In principle we can leverage reads mapping to multiple replicons (multireads) in two ways.
@@ -42,6 +42,7 @@ import glob
 import pprint
 import polars as pl
 from tqdm import tqdm
+import HTSeq ## for filtering fastq multireads.
 
 
 ################################################################################
@@ -1088,8 +1089,57 @@ def make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file):
     return
 
 
-def filter_fastq_files_for_multireads():
-    pass
+def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir):
+
+    ## make the directory for filtered multireads  if it does not exist.
+    if not exists(multiread_data_dir):
+        os.mkdir(multiread_data_dir)
+
+    files_in_pseudoalignment_dir = [x for x in os.listdir(themisto_pseudoalignment_dir)]
+    paths_in_pseudoalignment_dir = [os.path.join(themisto_pseudoalignment_dir, x) for x in files_in_pseudoalignment_dir]
+    pseudoalignment_dirpaths = [x for x in paths_in_pseudoalignment_dir if os.path.isdir(x)]
+
+    for my_pseudoalignment_results_dir in pseudoalignment_dirpaths:
+        my_pseudoalignment_files = [x for x in os.listdir(my_pseudoalignment_results_dir)]
+        my_pseudoalignment_paths = [os.path.join(my_pseudoalignment_results_dir, x) for x in my_pseudoalignment_files]
+
+        for cur_pseudoalignment_path in my_pseudoalignment_paths:
+            list_of_multiread_tuples = list()
+            with open(cur_pseudoalignment_path, "r") as pseudoalignment_fh:
+                for line in pseudoalignment_fh:
+                    line = line.strip() ## remove whitespace
+                    fields = line.split()
+                    if len(fields) <= 2: continue ## skip reads that map to zero or one reference sequences.
+                    read_index = int(fields[0])
+                    matched_reference_tuple = tuple(fields[1:])
+                    multiread_tuple = (read_index, matched_reference_tuple)
+                    list_of_multiread_tuples.append(multiread_tuple)
+            ## sort the list of multiread tuples in-place by the read_index.
+            list_of_multiread_tuples.sort(key=lambda x: x[0])
+            ## if there are multireads, then filter the original fastq file for multireads.
+            if len(list_of_multiread_tuples):
+                ## IMPORTANT: read indices in the themisto pseudoalignments are zero-based (first index is 0).
+                multiread_indices = {x[0] for x in list_of_multiread_tuples} ## this is a set
+                ## construct the path to the original fastq file.
+                my_fastq_file = basename(cur_pseudoalignment_path).split("_pseudoalignment.txt")[0] + ".fastq"
+                my_fastq_path = os.path.join(SRA_data_dir, my_fastq_file)
+                ## construct the path to the filtered fastq file.
+                my_filtered_fastq_file = "multireads_" + my_fastq_file
+                my_filtered_fastq_path = os.path.join(multiread_data_dir, my_filtered_fastq_file)
+                print(f"filtering {my_fastq_file} for multireads. multireads written into {my_filtered_fastq_path}")
+                ## write out the filtered reads
+                with open(my_filtered_fastq_path, "w") as filtered_fastq_fh:
+                    my_fastq_reader = HTSeq.FastqReader(my_fastq_path)
+                    for i, read in enumerate(my_fastq_reader):
+                        ## skip reads that aren't in the set of multireads
+                        if i not in multiread_indices: continue
+                        read.write_to_fastq_file(filtered_fastq_fh)          
+    return
+
+
+def align_multireads_with_minimap2():
+    print("Hello!")
+    return
 
 
 ################################################################################
@@ -1121,8 +1171,8 @@ def pipeline_main():
 
     ## directories for themisto inputs and outputs.
     themisto_replicon_ref_dir = "../results/themisto_replicon_references/"
-    themisto_replicon_index_dir = "../results/themisto_replicon_indices"
-    themisto_pseudoalignment_dir = "../results/themisto_replicon_pseudoalignments"
+    themisto_replicon_index_dir = "../results/themisto_replicon_indices/"
+    themisto_pseudoalignment_dir = "../results/themisto_replicon_pseudoalignments/"
     themisto_results_csvfile_path = "../results/themisto-replicon-read-counts.csv"
 
     ## this file contains estimates that throw out multireplicon reads.
@@ -1132,7 +1182,9 @@ def pipeline_main():
     simple_themisto_PCN_csv_file = "../results/simple-themisto-PCN-estimates.csv"
 
     gbk_annotation_file = "../results/gbk-annotation-table.csv"
-    
+
+    ## directory for filtered multireads.
+    multiread_data_dir = "../data/filtered_multireads/"
 
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -1447,17 +1499,16 @@ def pipeline_main():
     #####################################################################################
     ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
     #####################################################################################
+    ## The Naive PCN calculation in Stage 16 generates the initial PCN vectors and saves them on disk.
+
+    #####################################################################################
     ## Stage 18: filter fastq reads for multireads.
     stage_18_complete_file = "../results/stage18.done"
     if exists(stage_18_complete_file):
         print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
     else:
         stage18_start_time = time.time()  # Record the start time
-
-        filter_fastq_files_for_multireads()
-        quit()
-
-        
+        filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
         stage18_end_time = time.time()  # Record the end time
         stage18_execution_time = stage18_end_time - stage18_start_time
         Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds"
@@ -1466,6 +1517,32 @@ def pipeline_main():
         with open(stage_18_complete_file, "w") as stage_18_complete_log:
             stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
         quit()
+
+    #####################################################################################
+    ## Stage 19: for each genome, align multireads to the replicons with minimap2.
+    stage_19_complete_file = "../results/stage19.done"
+    if exists(stage_19_complete_file):
+        print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
+    else:
+        stage19_start_time = time.time()  # Record the start time
+
+        align_multireads_with_minimap2()
+        quit() ## for debugging.
+        
+        stage19_end_time = time.time()  # Record the end time
+        stage19_execution_time = stage19_end_time - stage19_start_time
+        Stage19TimeMessage = f"Stage 19 (aligning multireads with minimap2) execution time: {stage19_execution_time} seconds"
+        print(Stage19TimeMessage)
+        logging.info(Stage19TimeMessage)
+        with open(stage_19_complete_file, "w") as stage_19_complete_log:
+            stage_19_complete_log.write("stage 19 (aligning multireads with minimap2) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+
+    ## Stage 20: parse minimap2 results, and pickle the match matrices for each genome to disk.
+
+    ## Stage 21: Run PIRA on each genome, using the match matrices, and the initial PCN guesses.
 
     
     return
