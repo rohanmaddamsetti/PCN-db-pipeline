@@ -1118,6 +1118,13 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
             list_of_multiread_tuples.sort(key=lambda x: x[0])
             ## if there are multireads, then filter the original fastq file for multireads.
             if len(list_of_multiread_tuples):
+
+                ## if there are multireads, then make multiread_genome_dir
+                my_genome = basename(my_pseudoalignment_results_dir)
+                multiread_genome_dir = os.path.join(multiread_data_dir, my_genome)
+                if not exists(multiread_genome_dir):
+                    os.mkdir(multiread_genome_dir)
+                
                 ## IMPORTANT: read indices in the themisto pseudoalignments are zero-based (first index is 0).
                 multiread_indices = {x[0] for x in list_of_multiread_tuples} ## this is a set
                 ## construct the path to the original fastq file.
@@ -1125,7 +1132,7 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
                 my_fastq_path = os.path.join(SRA_data_dir, my_fastq_file)
                 ## construct the path to the filtered fastq file.
                 my_filtered_fastq_file = "multireads_" + my_fastq_file
-                my_filtered_fastq_path = os.path.join(multiread_data_dir, my_filtered_fastq_file)
+                my_filtered_fastq_path = os.path.join(multiread_genome_dir, my_filtered_fastq_file)
                 print(f"filtering {my_fastq_file} for multireads. multireads written into {my_filtered_fastq_path}")
                 ## write out the filtered reads
                 with open(my_filtered_fastq_path, "w") as filtered_fastq_fh:
@@ -1137,8 +1144,74 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
     return
 
 
-def align_multireads_with_minimap2():
-    print("Hello!")
+def make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir):
+    paths_in_themisto_replicon_ref_dir = [os.path.join(themisto_replicon_ref_dir, x) for x in os.listdir(themisto_replicon_ref_dir)]
+    ## extra checking to make sure we are handling directories.
+    dirpaths_in_themisto_replicon_ref_dir = [x for x in paths_in_themisto_replicon_ref_dir if os.path.isdir(x)]
+    for my_dir in dirpaths_in_themisto_replicon_ref_dir:
+        ## get the paths to each replicon FASTA file.
+        ## IMPORTANT: the order of replicons in this file MATTERS.
+        ## This corresponds to the zero-indexed replicon assignment done by themisto pseudoalignment.
+        replicon_fasta_pathlist = []
+        my_replicon_fasta_listfilepath = [os.path.join(my_dir, x) for x in os.listdir(my_dir) if x.endswith(".txt")].pop()
+        with open(my_replicon_fasta_listfilepath, "r") as replicon_listfile_fh:
+            for line in replicon_listfile_fh:
+                line = line.strip()
+                replicon_fasta_pathlist.append(line)
+
+        my_fasta_reference_genome_outfile = basename(my_dir) + ".fna"
+        my_fasta_reference_genome_outpath = os.path.join(my_dir, my_fasta_reference_genome_outfile)
+
+        with open(my_fasta_reference_genome_outpath, "w") as fasta_outfh:
+            for themisto_replicon_num, replicon_fasta_path in enumerate(replicon_fasta_pathlist):
+                with open(replicon_fasta_path, "r") as my_fasta_infh:
+                    for i, line in enumerate(my_fasta_infh):
+                        ## add the replicon ID number assigned by themisto to the FASTA header
+                        if i == 0:
+                            header_string = line.lstrip(">")
+                            replicon_id_string = "ThemistoRepliconID=" + str(themisto_replicon_num)
+                            updated_header = ">" +  replicon_id_string + "|" + header_string
+                            fasta_outfh.write(updated_header)
+                        else:
+                            fasta_outfh.write(line)    
+    return
+
+
+def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir):
+    ## Example: minimap2 -ax sr ref.fa read1.fq read2.fq > aln.sam
+
+    ## make the directory for multiread alignments  if it does not exist.
+    if not exists(multiread_alignment_dir):
+        os.mkdir(multiread_alignment_dir)
+    
+    genomes_with_multireads = [x for x in os.listdir(multiread_data_dir) if x.startswith("GCF")]
+    for my_genome in genomes_with_multireads:
+
+        ## make a subdirectory for the multiread alignments.
+        multiread_genome_alignment_dir = os.path.join(multiread_alignment_dir, my_genome)
+        if not exists(multiread_genome_alignment_dir):
+            os.mkdir(multiread_genome_alignment_dir)
+
+        
+        ref_genome_fasta_file = my_genome + ".fna"
+        reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome, ref_genome_fasta_file)
+        my_multiread_data_dir = os.path.join(multiread_data_dir, my_genome)
+        my_multiread_data_pathlist = [os.path.join(my_multiread_data_dir, x) for x in os.listdir(my_multiread_data_dir)]
+        my_multiread_data_pathlist.sort() ## sort the filtered data.
+        
+        ## run single-end read alignment on each fastq file separately.
+        for my_index, cur_multiread_data_path in enumerate(my_multiread_data_pathlist):
+            my_alignment_file = basename(cur_multiread_data_path).split(".fastq")[0] + ".sam"
+            my_multiread_alignment_outpath = os.path.join(multiread_genome_alignment_dir, my_alignment_file)
+
+            minimap2_cmd_string = " ".join(["minimap2 -ax sr", reference_genome_path, cur_multiread_data_path, ">", my_multiread_alignment_outpath])
+            print(minimap2_cmd_string)
+            subprocess.run(minimap2_cmd_string, shell=True)
+    return
+
+
+def parse_multiread_alignments():
+    print("HELLO!")
     return
 
 
@@ -1185,6 +1258,9 @@ def pipeline_main():
 
     ## directory for filtered multireads.
     multiread_data_dir = "../data/filtered_multireads/"
+
+    ## directory for multiread alignments constructed with minimap2.
+    multiread_alignment_dir = "../results/multiread_alignments/"
 
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -1519,30 +1595,63 @@ def pipeline_main():
         quit()
 
     #####################################################################################
-    ## Stage 19: for each genome, align multireads to the replicons with minimap2.
+    ## Stage 19: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
     stage_19_complete_file = "../results/stage19.done"
     if exists(stage_19_complete_file):
         print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
     else:
         stage19_start_time = time.time()  # Record the start time
-
-        align_multireads_with_minimap2()
-        quit() ## for debugging.
-        
+        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir, multiread_data_dir)
         stage19_end_time = time.time()  # Record the end time
         stage19_execution_time = stage19_end_time - stage19_start_time
-        Stage19TimeMessage = f"Stage 19 (aligning multireads with minimap2) execution time: {stage19_execution_time} seconds"
+        Stage19TimeMessage = f"Stage 19 (making FASTA reference genomes for multiread alignment) execution time: {stage19_execution_time} seconds"
         print(Stage19TimeMessage)
         logging.info(Stage19TimeMessage)
         with open(stage_19_complete_file, "w") as stage_19_complete_log:
-            stage_19_complete_log.write("stage 19 (aligning multireads with minimap2) finished successfully.\n")
+            stage_19_complete_log.write("stage 19 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
         quit()
 
     #####################################################################################
+    ## Stage 20: for each genome, align multireads to the replicons with minimap2.
+    stage_20_complete_file = "../results/stage20.done"
+    if exists(stage_20_complete_file):
+        print(f"{stage_20_complete_file} exists on disk-- skipping stage 20.")
+    else:
+        stage20_start_time = time.time()  # Record the start time
+        align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
+        stage20_end_time = time.time()  # Record the end time
+        stage20_execution_time = stage20_end_time - stage20_start_time
+        Stage20TimeMessage = f"Stage 20 (aligning multireads with minimap2) execution time: {stage20_execution_time} seconds"
+        print(Stage20TimeMessage)
+        logging.info(Stage20TimeMessage)
+        with open(stage_20_complete_file, "w") as stage_20_complete_log:
+            stage_20_complete_log.write("stage 20 (aligning multireads with minimap2) finished successfully.\n")
+        quit()
 
-    ## Stage 20: parse minimap2 results, and pickle the match matrices for each genome to disk.
+    #####################################################################################
+    ## Stage 21: parse minimap2 results, and pickle the match matrices for each genome to disk.
 
-    ## Stage 21: Run PIRA on each genome, using the match matrices, and the initial PCN guesses.
+    stage_21_complete_file = "../results/stage21.done"
+    if exists(stage_21_complete_file):
+        print(f"{stage_21_complete_file} exists on disk-- skipping stage 21.")
+    else:
+        stage21_start_time = time.time()  # Record the start time
+
+        parse_multiread_alignments()
+        quit() ## for debugging
+        
+        stage21_end_time = time.time()  # Record the end time
+        stage21_execution_time = stage21_end_time - stage21_start_time
+        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments) execution time: {stage21_execution_time} seconds"
+        print(Stage21TimeMessage)
+        logging.info(Stage21TimeMessage)
+        with open(stage_21_complete_file, "w") as stage_21_complete_log:
+            stage_21_complete_log.write("stage 21 (parsing multiread alignments) finished successfully.\n")
+        quit()
+
+
+    
+    ## Stage 22: Run PIRA on each genome, using the match matrices, and the initial PCN guesses.
 
     
     return
