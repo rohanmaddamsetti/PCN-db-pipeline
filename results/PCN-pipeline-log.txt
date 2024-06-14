@@ -217,3 +217,104 @@ INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:Stage 16 (themisto PCN estimates) execution time: 32.61533784866333 seconds
 INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
 INFO:root:Stage 16 (themisto PCN estimates) execution time: 32.32421517372131 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 17 (gbk ecological annotation) execution time: 1.7941181659698486 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 12 (making fasta references for themisto) execution time: 2152.5399820804596 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 17 (gbk ecological annotation) execution time: 1.7178730964660645 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 18 (fastq read filtering) execution time: 137.5367751121521 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 19 (making FASTA reference genomes for multiread alignment) execution time: 35.97378730773926 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 18 (fastq read filtering) execution time: 138.84217596054077 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 20 (aligning multireads with minimap2) execution time: 1.5495848655700684 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 20 (aligning multireads with minimap2) execution time: 0.9578969478607178 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:Stage 20 (aligning multireads with minimap2) execution time: 0.9408178329467773 seconds
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
+INFO:root:../results/RunID_table.csv exists on disk-- skipping stage 1.
