@@ -717,16 +717,38 @@ def generate_replicon_fasta_references_for_themisto(gbk_gz_path, fasta_outdir):
             with open(my_replicon_outfilepath, "w") as outfh:
                 outfh.write(header + "\n")
                 outfh.write(str(record.seq) + "\n")
+    return
 
 
 def generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir):
+    """
+    IMPORTANT: the replicons in the fasta reference list file need to be sorted by length.
+    Directly measure the length of each of the replicons here, and then use this to sort
+    the list of replicon FASTA paths, before writing to file.
+    """
     genome_id = os.path.basename(fasta_outdir)
     replicon_fasta_filelist = [x for x in os.listdir(fasta_outdir) if x.endswith(".fna")]
+    replicon_fasta_pathlist = [os.path.join(fasta_outdir, x) for x in replicon_fasta_filelist]
+
+    ## Decorate-sort-undecorate by fasta sequence length.
+    decorated_replicon_fasta_pathlist = list()
+    for fastapath in replicon_fasta_pathlist:
+        my_replicon = SeqIO.read(fastapath, "fasta")
+        ## Get the length of the replicon
+        replicon_length = len(my_replicon.seq)
+        ## append a tuple of (fastapath, replicon_length)
+        my_tuple = (fastapath, replicon_length)
+        decorated_replicon_fasta_pathlist.append(my_tuple)
+    ## sort the decorated list in place by replicon_length.
+    decorated_replicon_fasta_pathlist.sort(key=lambda x: x[1])
+    ## undecorate the path list, which is now in sorted order.
+    sorted_replicon_fasta_pathlist = [x[0] for x in decorated_replicon_fasta_pathlist]
+
+    ## write the path list to file for themisto.
     replicon_listfile = os.path.join(fasta_outdir, genome_id + ".txt")
     with open(replicon_listfile, "w") as fastatxtfile_fh:
-        for fastafile in replicon_fasta_filelist:
-            my_replicon_fasta_path = os.path.join(fasta_outdir, fastafile)
-            fastatxtfile_fh.write(my_replicon_fasta_path + "\n")
+        for fastapath in sorted_replicon_fasta_pathlist:
+            fastatxtfile_fh.write(fasta_path + "\n")
     return
 
 
