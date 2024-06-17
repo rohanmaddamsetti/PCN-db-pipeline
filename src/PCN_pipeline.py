@@ -807,8 +807,10 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
     if not exists(themisto_pseudoalignment_dir):
         os.mkdir(themisto_pseudoalignment_dir)
 
-    ## each directory in themisto_index_dir is named after the genome_id of the given genome.
-    for genome_id in os.listdir(themisto_index_dir):
+    ## each directory in themisto_index_dir is named after the genome_id of the given genome--
+    ## HOWEVER-- we need to skip the "temp" directory in themisto_index_dir!
+    genome_id_list = [x for x in os.listdir(themisto_index_dir) if x != "temp"]
+    for genome_id in genome_id_list:
         my_index_dir = os.path.join(themisto_index_dir, genome_id)
         ## make sure that this path is real, and not an artifact of some weird file in this directory
         if not os.path.isdir(my_index_dir):
@@ -1326,21 +1328,31 @@ def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_
         MatchMatrix = np.array(match_matrix_list_of_rows)
         pprint.pprint(MatchMatrix)
 
-        ## Generate the vector of initial PCN estimates.
-        ## We have to update the results of the Naive PCN estimates from Themisto
-        ## (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
-        ## with minimap2.
+        """ Generate the vector of initial PCN estimates.
+        We have to update the results of the Naive PCN estimates from Themisto
+        (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
+        with minimap2.
+        """
 
         print(my_naive_themisto_PCN_df)
         pprint.pprint(additional_replicon_reads_dict)
 
-        ## TODO: 1) revise the themisto ID mapping, such that the IDs are sorted in order of replicon length.
-        ## TODO: 2) turn the additional_replicon_reads_dict into a polars dataframe,
+        ## WORKING HERE!
+        
+        ## TODO: turn the additional_replicon_reads_dict into a polars dataframe,
         ## then merge with my_naive_themisto_PCN_df with a polars dataframe join.
         ## Then re-calculate SequencingCoverage, LongestRepliconCoverage, and CopyNumber
         ## with the additional reads.
         ## Then extract the CopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
 
+        
+        
+        """ Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
+        ensures that Themisto Replicon IDs are sorted by replicon length in descending order
+        (i.e., Replicon ID == 0 corresponds to the longest chromosome).
+        """
+        
+        ## Then, run PIRA, assuming that the zero-th index of the Match Matrix is the chromosome for normalization.
         
     return
 
@@ -1769,7 +1781,7 @@ def pipeline_main():
         stage21_start_time = time.time()  # Record the start time
 
         run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
-        quit() ## for debugging ## NOTE: rewrite stage 12 to sort the fasta files in the reference list file.
+        quit() ## for debugging
         
         stage21_end_time = time.time()  # Record the end time
         stage21_execution_time = stage21_end_time - stage21_start_time
