@@ -1270,6 +1270,77 @@ def parse_multiread_alignments(genome_dir):
     return multiread_mapping_dict
 
 
+def generate_initial_PIRA_PCN_estimate_vector(
+        additional_replicon_reads_dict,
+        themisto_ID_to_seq_metadata_dict,
+        my_naive_themisto_PCN_df):
+    """ Generate the vector of initial PCN estimates.
+        We have to update the results of the Naive PCN estimates from Themisto
+        (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
+        with minimap2.
+    """
+
+    ## Turn the additional_replicon_reads_dict into a polars dataframe.
+    themisto_id_col = list()
+    additional_readcount_col = list()
+    replicon_seq_id_col = list()
+    replicon_seq_type_col = list()
+    for themisto_id, readcount in additional_replicon_reads_dict.items():
+        ## get the SeqID and SeqType given the Themisto ID.
+        seq_id, seq_type = themisto_ID_to_seq_metadata_dict[themisto_id]
+        ## now append to the columns for the new DataFrame.
+        themisto_id_col.append(themisto_id)
+        additional_readcount_col.append(readcount)
+        replicon_seq_id_col.append(seq_id)
+        replicon_seq_type_col.append(seq_type)
+    ## now make the DataFrame.
+    additional_replicon_reads_df = pl.DataFrame(
+        {"ThemistoID" : themisto_id_col, "AdditionalReadCount" : additional_readcount_col,
+         "SeqID" : replicon_seq_id_col, "SeqType" : replicon_seq_type_col}
+    )
+
+    ## merge the DataFrames containing the ReadCounts,
+    merged_readcount_df = my_naive_themisto_PCN_df.join(
+        additional_replicon_reads_df, on="SeqID").with_columns(
+            ## sum those ReadCounts,
+        (pl.col("InitialReadCount") + pl.col("AdditionalReadCount")).alias("ReadCount")).with_columns(
+            ## and re-calculate SequencingCoverage,
+            (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+
+    ## The following is a hack, following code in the function native_themisto_PCN_estimation(),
+    ## to recalculate LongestRepliconCoverage and CopyNumber with the additional reads.
+
+    ## find the length of the longest replicon
+    max_replicon_length = merged_readcount_df.select(pl.col("replicon_length").max()).item()
+
+    ## filter the DataFrame to get the row for the longest replicon
+    longest_replicon_row_df = merged_readcount_df.filter(
+        pl.col("replicon_length") == max_replicon_length).with_columns(
+            ## and define the LongestRepliconCoverage column for merging back.
+            pl.col("SequencingCoverage").alias("LongestRepliconCoverage")).select(
+            pl.col("AnnotationAccession", "LongestRepliconCoverage"))
+
+    ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
+    pre_PIRA_PCN_df = merged_readcount_df.join(
+    ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
+    ## I don't know why. So remove the newly made AnnotationAccession_right column.
+        longest_replicon_row_df, on = "AnnotationAccession").select(
+        pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+        (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber")).sort(
+        ## and sort by the ThemistoID column.
+        "ThemistoID"
+    ) 
+
+    """ Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
+    ensures that Themisto Replicon IDs are sorted by replicon length in descending order
+    (i.e., Replicon ID == 0 corresponds to the longest chromosome).
+
+    therefore, we can  extract the CopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
+    """
+    initial_PCN_vector  = pre_PIRA_PCN_df["CopyNumber"].to_numpy()
+    return initial_PCN_vector
+
+
 def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
@@ -1288,9 +1359,12 @@ def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
-        ## for filtering the naive PCN estimates for this genome with multireads.
+        ## for filtering the naive PCN estimates for this genome with multireads
         my_naive_themisto_PCN_df = naive_themisto_PCN_df.filter(
-            pl.col("AnnotationAccession") == genome_ID)
+            pl.col("AnnotationAccession") == genome_ID).select(
+                ## select only the columns we need.
+                ['AnnotationAccession', 'SeqID', 'SeqType', 'ReadCount', 'replicon_length']
+            ).rename({"ReadCount": "InitialReadCount"}) ## rename ReadCount to InitialReadCount
 
         ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
         themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
@@ -1333,26 +1407,12 @@ def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_
         (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
         with minimap2.
         """
+        initial_PCN_vector = generate_initial_PIRA_PCN_estimate_vector(
+            additional_replicon_reads_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
 
-        print(my_naive_themisto_PCN_df)
-        pprint.pprint(additional_replicon_reads_dict)
-
-        ## WORKING HERE!
-        
-        ## TODO: turn the additional_replicon_reads_dict into a polars dataframe,
-        ## then merge with my_naive_themisto_PCN_df with a polars dataframe join.
-        ## Then re-calculate SequencingCoverage, LongestRepliconCoverage, and CopyNumber
-        ## with the additional reads.
-        ## Then extract the CopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
-
-        
-        
-        """ Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
-        ensures that Themisto Replicon IDs are sorted by replicon length in descending order
-        (i.e., Replicon ID == 0 corresponds to the longest chromosome).
-        """
-        
-        ## Then, run PIRA, assuming that the zero-th index of the Match Matrix is the chromosome for normalization.
+        print(initial_PCN_vector)
+        ## TODO: WORKING HERE!
+        ## Finally, run PIRA, assuming that the zero-th index of the Match Matrix is the chromosome for normalization.
         
     return
 
