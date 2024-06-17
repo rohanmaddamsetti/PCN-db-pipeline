@@ -43,6 +43,7 @@ import pprint
 import polars as pl
 from tqdm import tqdm
 import HTSeq ## for filtering fastq multireads.
+import numpy as np ## for matrix multiplications for running PIRA.
 
 
 ################################################################################
@@ -838,6 +839,23 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
     return
 
 
+def map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, my_genome_dirname):
+    ## now, let's map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
+    themisto_ID_to_seq_metadata_dict = dict()
+    my_themisto_replicon_ID_mapping_file = os.path.join(themisto_replicon_ref_dir, my_genome_dirname, my_genome_dirname + ".txt")
+    with open(my_themisto_replicon_ID_mapping_file, "r") as replicon_ID_mapping_fh:
+        for i,fasta_file_path in enumerate(replicon_ID_mapping_fh):
+            fasta_file_path = fasta_file_path.strip()
+            ## get the header from this fasta file.
+            with open(fasta_file_path, "r") as fasta_fh:
+                my_header = fasta_fh.readline().strip()
+            fields = my_header.strip(">").split("|")
+            SeqID = fields[0].split("=")[-1]
+            SeqType = fields[1].split("=")[-1]
+            themisto_ID_to_seq_metadata_dict[str(i)] = (SeqID, SeqType)
+    return themisto_ID_to_seq_metadata_dict
+
+
 def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path):
     with open(themisto_results_csvfile_path, "w") as output_csv_fh:
         ## first, write the output header.
@@ -864,19 +882,10 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
                             pseudoalignment_read_count_dict[replicon_set_string] += 1
                         else:
                             pseudoalignment_read_count_dict[replicon_set_string] = 1
+
             ## now, let's map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
-            themisto_ID_to_seq_metadata_dict = dict()
-            my_themisto_replicon_ID_mapping_file = os.path.join(themisto_replicon_ref_dir, my_genome_dirname, my_genome_dirname + ".txt")
-            with open(my_themisto_replicon_ID_mapping_file, "r") as replicon_ID_mapping_fh:
-                for i,fasta_file_path in enumerate(replicon_ID_mapping_fh):
-                    fasta_file_path = fasta_file_path.strip()
-                    ## get the header from this fasta file.
-                    with open(fasta_file_path, "r") as fasta_fh:
-                        my_header = fasta_fh.readline().strip()
-                    fields = my_header.strip(">").split("|")
-                    SeqID = fields[0].split("=")[-1]
-                    SeqType = fields[1].split("=")[-1]
-                    themisto_ID_to_seq_metadata_dict[str(i)] = (SeqID, SeqType)
+            themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, my_genome_dirname)
+            
             ## now write the pseudoalignment counts to file.
             for replicon_set_string in sorted(pseudoalignment_read_count_dict.keys()):
                 read_count = pseudoalignment_read_count_dict[replicon_set_string]
@@ -1178,7 +1187,8 @@ def make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir):
 
 
 def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir):
-    ## Example: minimap2 -ax sr ref.fa read1.fq read2.fq > aln.sam
+    ## Example: minimap2 -x sr ref.fa read1.fq read2.fq > aln.paf
+    ## Details of PAF format are here: https://github.com/lh3/miniasm/blob/master/PAF.md
 
     ## make the directory for multiread alignments  if it does not exist.
     if not exists(multiread_alignment_dir):
@@ -1201,17 +1211,112 @@ def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir
         
         ## run single-end read alignment on each fastq file separately.
         for my_index, cur_multiread_data_path in enumerate(my_multiread_data_pathlist):
-            my_alignment_file = basename(cur_multiread_data_path).split(".fastq")[0] + ".sam"
+            my_alignment_file = basename(cur_multiread_data_path).split(".fastq")[0] + ".paf"
             my_multiread_alignment_outpath = os.path.join(multiread_genome_alignment_dir, my_alignment_file)
 
-            minimap2_cmd_string = " ".join(["minimap2 -ax sr", reference_genome_path, cur_multiread_data_path, ">", my_multiread_alignment_outpath])
+            minimap2_cmd_string = " ".join(["minimap2 -x sr", reference_genome_path, cur_multiread_data_path, ">", my_multiread_alignment_outpath])
             print(minimap2_cmd_string)
             subprocess.run(minimap2_cmd_string, shell=True)
     return
 
 
-def parse_multiread_alignments():
-    print("HELLO!")
+def parse_multiread_alignments(genome_dir):
+    ## make a dictionary from reads to the multiset of replicons that the read maps to.
+    paf_alignment_files = [x for x in os.listdir(genome_dir) if x.endswith(".paf")]
+    paf_alignment_paths = [os.path.join(genome_dir, x) for x in paf_alignment_files]
+    
+    multiread_mapping_dict = dict()
+    for paf_path in paf_alignment_paths:
+        with open(paf_path, "r") as paf_fh:
+            for line in paf_fh:
+                line = line.strip()
+                fields = line.split("\t")
+                ## see PAF format documentation here:
+                ## https://github.com/lh3/miniasm/blob/master/PAF.md
+                read_name = fields[0]
+                themisto_replicon_ID = fields[5].split("|")[0].split("=")[-1]
+                
+                if read_name in multiread_mapping_dict:
+                    multiread_mapping_dict[read_name].append(themisto_replicon_ID)
+                else:
+                    multiread_mapping_dict[read_name] = [themisto_replicon_ID]
+    return multiread_mapping_dict
+
+
+def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
+    ## only run PIRA on genomes with multireads.
+    genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
+
+    ## trim the "_genomic" suffix from the genome directories to get the actual IDs needed
+    ## for filtering the naive PCN estimates for the genomes with multireads.
+    genome_IDs_with_multireads = [x.replace("_genomic", "") for x in genomes_with_multireads]
+    
+    ## import the results of the Naive PCN estimates from Themisto,
+    ## and filter for rows corresponding to genomes with multireads.
+    naive_themisto_PCN_df = pl.read_csv(naive_themisto_PCN_csv_file).filter(
+        pl.col("AnnotationAccession").is_in(genome_IDs_with_multireads))
+    
+    for genome in genomes_with_multireads:
+        
+        ## get the Naive PCN estimates for this particular genome.
+        genome_ID = genome.replace("_genomic", "")
+        ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
+        ## for filtering the naive PCN estimates for this genome with multireads.
+        my_naive_themisto_PCN_df = naive_themisto_PCN_df.filter(
+            pl.col("AnnotationAccession") == genome_ID)
+
+        ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
+        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
+        
+        genome_dir = os.path.join(multiread_alignment_dir, genome)
+        ## make a dictionary mapping reads to Themisto replicon IDs.
+        multiread_mapping_dict = parse_multiread_alignments(genome_dir)
+
+        ## Iterate over the multiread_mapping_dict, and split into two data structures:
+        ## 1) reads that map to a single replicon are counted up in a dictionary.
+        additional_replicon_reads_dict = dict()
+        ## 2) reads that map to multiple replicons are stored in a list of lists,
+        ## that will then be turned into the numpy array to store the match matrix M.
+        match_matrix_list_of_rows = list()
+        
+        for read, replicon_list in multiread_mapping_dict.items():
+            replicon_set = set(replicon_list)
+            if len(replicon_set) == 0: ## the read does not map to any replicons -- should not occur.
+                raise AssertionError(f"READ {read} DID NOT ALIGN TO ANY REPLICON")
+            elif len(replicon_set) == 1: ## the read maps to a single replicon.
+                my_replicon = replicon_set.pop()
+                if my_replicon in additional_replicon_reads_dict:
+                    additional_replicon_reads_dict[my_replicon] += 1
+                else:
+                    additional_replicon_reads_dict[my_replicon] = 1
+            else: ## the read maps to multiple replicons
+                ## initialize a row of zeros, based on the number of replicons in this genome.
+                match_matrix_rowlist = [0 for k in themisto_ID_to_seq_metadata_dict.keys()]
+                for x in replicon_list:
+                    replicon_index = int(x)
+                    match_matrix_rowlist[replicon_index] += 1
+                match_matrix_list_of_rows.append(match_matrix_rowlist)
+
+        ## now set up the data structures for PIRA on this genome.
+        MatchMatrix = np.array(match_matrix_list_of_rows)
+        pprint.pprint(MatchMatrix)
+
+        ## Generate the vector of initial PCN estimates.
+        ## We have to update the results of the Naive PCN estimates from Themisto
+        ## (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
+        ## with minimap2.
+
+        print(my_naive_themisto_PCN_df)
+        pprint.pprint(additional_replicon_reads_dict)
+
+        ## TODO: 1) revise the themisto ID mapping, such that the IDs are sorted in order of replicon length.
+        ## TODO: 2) turn the additional_replicon_reads_dict into a polars dataframe,
+        ## then merge with my_naive_themisto_PCN_df with a polars dataframe join.
+        ## Then re-calculate SequencingCoverage, LongestRepliconCoverage, and CopyNumber
+        ## with the additional reads.
+        ## Then extract the CopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
+
+        
     return
 
 
@@ -1629,7 +1734,8 @@ def pipeline_main():
         quit()
 
     #####################################################################################
-    ## Stage 21: parse minimap2 results, and pickle the match matrices for each genome to disk.
+    ## Stage 21: Run PIRA.
+    ## For each genome, parse minimap2 results to form the match matrix and refine the initial PCN guesses.
 
     stage_21_complete_file = "../results/stage21.done"
     if exists(stage_21_complete_file):
@@ -1637,8 +1743,8 @@ def pipeline_main():
     else:
         stage21_start_time = time.time()  # Record the start time
 
-        parse_multiread_alignments()
-        quit() ## for debugging
+        run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
+        quit() ## for debugging ## NOTE: rewrite stage 12 to sort the fasta files in the reference list file.
         
         stage21_end_time = time.time()  # Record the end time
         stage21_execution_time = stage21_end_time - stage21_start_time
@@ -1648,11 +1754,6 @@ def pipeline_main():
         with open(stage_21_complete_file, "w") as stage_21_complete_log:
             stage_21_complete_log.write("stage 21 (parsing multiread alignments) finished successfully.\n")
         quit()
-
-
-    
-    ## Stage 22: Run PIRA on each genome, using the match matrices, and the initial PCN guesses.
-
     
     return
 
