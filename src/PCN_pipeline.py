@@ -727,7 +727,9 @@ def generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir):
     the list of replicon FASTA paths, before writing to file.
     """
     genome_id = os.path.basename(fasta_outdir)
-    replicon_fasta_filelist = [x for x in os.listdir(fasta_outdir) if x.endswith(".fna")]
+    ## IMPORTANT: exclude any FASTA file that has the genome_id as a name.
+    ## (this is a file containing all the replicons, created and used in the PIRA stages downstream).
+    replicon_fasta_filelist = [x for x in os.listdir(fasta_outdir) if x.endswith(".fna") and not x.startswith(genome_id)]
     replicon_fasta_pathlist = [os.path.join(fasta_outdir, x) for x in replicon_fasta_filelist]
 
     ## Decorate-sort-undecorate by fasta sequence length.
@@ -739,15 +741,16 @@ def generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir):
         ## append a tuple of (fastapath, replicon_length)
         my_tuple = (fastapath, replicon_length)
         decorated_replicon_fasta_pathlist.append(my_tuple)
-    ## sort the decorated list in place by replicon_length.
-    decorated_replicon_fasta_pathlist.sort(key=lambda x: x[1])
+    ## sort the decorated list in place by replicon_length, in descending order from
+    ## from largest to smallest replicon.
+    decorated_replicon_fasta_pathlist.sort(key=lambda x: x[1], reverse=True)
     ## undecorate the path list, which is now in sorted order.
     sorted_replicon_fasta_pathlist = [x[0] for x in decorated_replicon_fasta_pathlist]
 
     ## write the path list to file for themisto.
     replicon_listfile = os.path.join(fasta_outdir, genome_id + ".txt")
     with open(replicon_listfile, "w") as fastatxtfile_fh:
-        for fastapath in sorted_replicon_fasta_pathlist:
+        for fasta_path in sorted_replicon_fasta_pathlist:
             fastatxtfile_fh.write(fasta_path + "\n")
     return
 
