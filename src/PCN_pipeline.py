@@ -1329,7 +1329,7 @@ def generate_initial_PIRA_PCN_estimate_vector(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber")).sort(
         ## and sort by the ThemistoID column.
         "ThemistoID"
-    ) 
+    )
 
     """ Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
     ensures that Themisto Replicon IDs are sorted by replicon length in descending order
@@ -1341,7 +1341,82 @@ def generate_initial_PIRA_PCN_estimate_vector(
     return initial_PCN_vector
 
 
-def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
+def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df):
+    ## Iterate over the multiread_mapping_dict, and split into two data structures:
+    ## 1) reads that map to a single replicon are counted up in a dictionary.
+    additional_replicon_reads_dict = dict()
+    ## 2) reads that map to multiple replicons are stored in a list of lists,
+    ## that will then be turned into the numpy array to store the match matrix M.
+    match_matrix_list_of_rows = list()
+
+    for read, replicon_list in multiread_mapping_dict.items():
+        replicon_set = set(replicon_list)
+        if len(replicon_set) == 0: ## the read does not map to any replicons -- should not occur.
+            raise AssertionError(f"READ {read} DID NOT ALIGN TO ANY REPLICON")
+        elif len(replicon_set) == 1: ## the read maps to a single replicon.
+            my_replicon = replicon_set.pop()
+            if my_replicon in additional_replicon_reads_dict:
+                additional_replicon_reads_dict[my_replicon] += 1
+            else:
+                additional_replicon_reads_dict[my_replicon] = 1
+        else: ## the read maps to multiple replicons
+            ## initialize a row of zeros, based on the number of replicons in this genome.
+            match_matrix_rowlist = [0 for k in themisto_ID_to_seq_metadata_dict.keys()]
+            for x in replicon_list:
+                replicon_index = int(x)
+                match_matrix_rowlist[replicon_index] += 1
+            match_matrix_list_of_rows.append(match_matrix_rowlist)
+
+    ## now set up the data structures for PIRA on this genome.
+    MatchMatrix = np.array(match_matrix_list_of_rows)
+
+    """ Generate the vector of initial PCN estimates.
+    We have to update the results of the Naive PCN estimates from Themisto
+    (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
+    with minimap2.
+    """
+    initial_PCN_vector = generate_initial_PIRA_PCN_estimate_vector(
+        additional_replicon_reads_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
+    ## return both the MatchMatrix and the initial_PCN_vector to initialize PIRA for this genome.
+    return (MatchMatrix, initial_PCN_vector)
+
+
+def run_PIRA(M, v):
+    ## Run PIRA for a genome, assuming that the zero-th index of the match matrix M is the chromosome for normalization.
+    print(M)
+    print(M.shape)
+    print()
+    print(v)
+    print(v.shape)
+    print()
+    
+    ## Weight M by initial PCN guess v-- need to turn v into a diagonal matrix first.
+    diagonal_v = np.diag(v)
+    weighted_M = np.matmul(M, diagonal_v)
+    print(weighted_M)
+
+    ## Normalize rows of weighted_M to sum to 1: this the probabilistic read assignment.
+    ## Compute the sum of each row
+    weighted_M_row_sums = weighted_M.sum(axis=1)
+    ## Normalize each row by its sum
+    normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
+
+    print(normalized_weighted_M)
+    ## sum over the rows of the normalized and weighted M matrix to generate the
+    ## multiread vector R.
+    R = normalized_weighted_M.sum(axis=0)
+    print(R)
+
+    ## 
+    
+    quit()
+    return
+
+
+
+
+
+def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
 
@@ -1355,11 +1430,11 @@ def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_
         pl.col("AnnotationAccession").is_in(genome_IDs_with_multireads))
     
     for genome in genomes_with_multireads:
-        
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
         ## for filtering the naive PCN estimates for this genome with multireads
+        
         my_naive_themisto_PCN_df = naive_themisto_PCN_df.filter(
             pl.col("AnnotationAccession") == genome_ID).select(
                 ## select only the columns we need.
@@ -1372,49 +1447,15 @@ def run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_
         genome_dir = os.path.join(multiread_alignment_dir, genome)
         ## make a dictionary mapping reads to Themisto replicon IDs.
         multiread_mapping_dict = parse_multiread_alignments(genome_dir)
+        ## initialize the data structures for PIRA.
+        MatchMatrix, initial_PCN_vector = initializePIRA(
+            multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
+        ## now run PIRA for this genome.
+        run_PIRA(MatchMatrix, initial_PCN_vector)
+        ## WORKING HERE  !!!!!!!!!!!!!!!!!!!!!!
 
-        ## Iterate over the multiread_mapping_dict, and split into two data structures:
-        ## 1) reads that map to a single replicon are counted up in a dictionary.
-        additional_replicon_reads_dict = dict()
-        ## 2) reads that map to multiple replicons are stored in a list of lists,
-        ## that will then be turned into the numpy array to store the match matrix M.
-        match_matrix_list_of_rows = list()
-        
-        for read, replicon_list in multiread_mapping_dict.items():
-            replicon_set = set(replicon_list)
-            if len(replicon_set) == 0: ## the read does not map to any replicons -- should not occur.
-                raise AssertionError(f"READ {read} DID NOT ALIGN TO ANY REPLICON")
-            elif len(replicon_set) == 1: ## the read maps to a single replicon.
-                my_replicon = replicon_set.pop()
-                if my_replicon in additional_replicon_reads_dict:
-                    additional_replicon_reads_dict[my_replicon] += 1
-                else:
-                    additional_replicon_reads_dict[my_replicon] = 1
-            else: ## the read maps to multiple replicons
-                ## initialize a row of zeros, based on the number of replicons in this genome.
-                match_matrix_rowlist = [0 for k in themisto_ID_to_seq_metadata_dict.keys()]
-                for x in replicon_list:
-                    replicon_index = int(x)
-                    match_matrix_rowlist[replicon_index] += 1
-                match_matrix_list_of_rows.append(match_matrix_rowlist)
 
-        ## now set up the data structures for PIRA on this genome.
-        MatchMatrix = np.array(match_matrix_list_of_rows)
-        pprint.pprint(MatchMatrix)
 
-        """ Generate the vector of initial PCN estimates.
-        We have to update the results of the Naive PCN estimates from Themisto
-        (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
-        with minimap2.
-        """
-        initial_PCN_vector = generate_initial_PIRA_PCN_estimate_vector(
-            additional_replicon_reads_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
-
-        print(initial_PCN_vector)
-        ## TODO: WORKING HERE!
-        ## Finally, run PIRA, assuming that the zero-th index of the Match Matrix is the chromosome for normalization.
-        
-    return
 
 
 ################################################################################
@@ -1840,7 +1881,7 @@ def pipeline_main():
     else:
         stage21_start_time = time.time()  # Record the start time
 
-        run_PIRA(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
+        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
         quit() ## for debugging
         
         stage21_end_time = time.time()  # Record the end time
