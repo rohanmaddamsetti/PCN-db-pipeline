@@ -1270,11 +1270,11 @@ def parse_multiread_alignments(genome_dir):
     return multiread_mapping_dict
 
 
-def generate_initial_PIRA_PCN_estimate_vector(
+def make_PIRAGenomeDataFrame(
         additional_replicon_reads_dict,
         themisto_ID_to_seq_metadata_dict,
         my_naive_themisto_PCN_df):
-    """ Generate the vector of initial PCN estimates.
+    """ Make the DataFrame with the data needed for PIRA on a given genome.
         We have to update the results of the Naive PCN estimates from Themisto
         (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
         with minimap2.
@@ -1321,24 +1321,21 @@ def generate_initial_PIRA_PCN_estimate_vector(
             pl.col("AnnotationAccession", "LongestRepliconCoverage"))
 
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
-    pre_PIRA_PCN_df = merged_readcount_df.join(
+    PIRAGenomeDataFrame = merged_readcount_df.join(
     ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
     ## I don't know why. So remove the newly made AnnotationAccession_right column.
         longest_replicon_row_df, on = "AnnotationAccession").select(
         pl.col("*").exclude("AnnotationAccession_right")).with_columns(
-        (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber")).sort(
+        (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
         ## and sort by the ThemistoID column.
         "ThemistoID"
     )
-
-    """ Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
+    """
+    Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
     ensures that Themisto Replicon IDs are sorted by replicon length in descending order
     (i.e., Replicon ID == 0 corresponds to the longest chromosome).
-
-    therefore, we can  extract the CopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
     """
-    initial_PCN_vector  = pre_PIRA_PCN_df["CopyNumber"].to_numpy()
-    return initial_PCN_vector
+    return PIRAGenomeDataFrame
 
 
 def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df):
@@ -1370,50 +1367,67 @@ def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_
     ## now set up the data structures for PIRA on this genome.
     MatchMatrix = np.array(match_matrix_list_of_rows)
 
-    """ Generate the vector of initial PCN estimates.
-    We have to update the results of the Naive PCN estimates from Themisto
-    (results of stage 16) by adding the additional replicon reads found by re-aligning multireads
+    """ Generate the DataFrame containing the ReadCounts,  replicon lengths, and initial PCN estimates.
+    We update the results of the Naive PCN estimates from Themisto (results of stage 16)
+    by adding the additional replicon reads found by re-aligning multireads
     with minimap2.
     """
-    initial_PCN_vector = generate_initial_PIRA_PCN_estimate_vector(
+    PIRAGenomeDataFrame = make_PIRAGenomeDataFrame(
         additional_replicon_reads_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
-    ## return both the MatchMatrix and the initial_PCN_vector to initialize PIRA for this genome.
-    return (MatchMatrix, initial_PCN_vector)
+    ## return inputs requires for PIRA for this genome.
+    return (MatchMatrix, PIRAGenomeDataFrame)
 
 
-def run_PIRA(M, v):
+def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     ## Run PIRA for a genome, assuming that the zero-th index of the match matrix M is the chromosome for normalization.
     print(M)
     print(M.shape)
     print()
-    print(v)
-    print(v.shape)
-    print()
+
+    """
+    Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
+    ensures that Themisto Replicon IDs are sorted by replicon length in descending order
+    (i.e., Replicon ID == 0 corresponds to the longest chromosome).
+
+    Therefore, we can  extract the InitialCopyNumber Column as a numpy vector as the initial PCN estimate guess for PIRA.
+    """
     
-    ## Weight M by initial PCN guess v-- need to turn v into a diagonal matrix first.
-    diagonal_v = np.diag(v)
-    weighted_M = np.matmul(M, diagonal_v)
-    print(weighted_M)
+    v = PIRAGenomeDataFrame["InitialCopyNumberEstimate"].to_numpy()
+    readcount_vector = PIRAGenomeDataFrame["ReadCount"].to_numpy()
+    replicon_length_vector = PIRAGenomeDataFrame["replicon_length"].to_numpy()
 
-    ## Normalize rows of weighted_M to sum to 1: this the probabilistic read assignment.
-    ## Compute the sum of each row
-    weighted_M_row_sums = weighted_M.sum(axis=1)
-    ## Normalize each row by its sum
-    normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
+    convergence_error = 10000.0
+    ## Iterate PIRA until error converges to zero.
+    while convergence_error > epsilon:
+        print(f"current convergence error: {convergence_error}")
+        print(f"current PCN estimate vector: {v}")
+        ## Weight M by PCN guess v-- need to turn v into a diagonal matrix first.
+        diagonal_v = np.diag(v)
+        weighted_M = np.matmul(M, diagonal_v)
+        print(weighted_M)
 
-    print(normalized_weighted_M)
-    ## sum over the rows of the normalized and weighted M matrix to generate the
-    ## multiread vector R.
-    R = normalized_weighted_M.sum(axis=0)
-    print(R)
+        ## Normalize rows of weighted_M to sum to 1: this the probabilistic read assignment.
+        ## Compute the sum of each row
+        weighted_M_row_sums = weighted_M.sum(axis=1)
+        ## Normalize each row by its sum
+        normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
 
-    ## 
+        print(normalized_weighted_M)
+        ## sum over the rows of the normalized and weighted M matrix to generate the
+        ## multiread vector.
+        multiread_vector = normalized_weighted_M.sum(axis=0)
+        print(multiread_vector)
+
+        ## update the PCN estimate vector v using the multiread vector
+        unnormalized_v = (multiread_vector + readcount_vector) / replicon_length_vector
+        normalization_factor = unnormalized_v[0] ## coverage for the longest chromosome.
+        updated_v = unnormalized_v / normalization_factor
     
-    quit()
-    return
-
-
-
+        ## update the error estimate
+        convergence_error = sum(updated_v - v)
+        ## and update the PCN estimate vector v
+        v = updated_v
+    return v
 
 
 def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
@@ -1448,15 +1462,19 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         ## make a dictionary mapping reads to Themisto replicon IDs.
         multiread_mapping_dict = parse_multiread_alignments(genome_dir)
         ## initialize the data structures for PIRA.
-        MatchMatrix, initial_PCN_vector = initializePIRA(
+        MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
             multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
         ## now run PIRA for this genome.
-        run_PIRA(MatchMatrix, initial_PCN_vector)
+        PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
         ## WORKING HERE  !!!!!!!!!!!!!!!!!!!!!!
+        print(f"PIRA PCN estimate vector for genome {genome} is: {PIRA_PCN_estimate_vector}")
+        quit() ## DEBUGGING
 
 
 
 
+
+        
 
 ################################################################################
 
