@@ -230,16 +230,20 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     return
  
 
-def download_fastq_reads(SRA_data_dir, RunID_table_file):
+def get_Run_IDs(RunID_table_file):
+    Run_IDs = list()
+    with open(RunID_table_file, "r") as RunID_table_fh:
+        table_csv = csv.DictReader(RunID_table_fh)
+        Run_IDs = [row["Run_ID"] for row in table_csv]
+    return Run_IDs
+
+
+def download_fastq_reads(SRA_data_dir, Run_IDs):
         """
         the Run_ID has to be the last part of the directory.
         see documentation here:
         https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump
         """
-        Run_IDs = []
-        with open(RunID_table_file, "r") as RunID_table_file_obj:
-            table_csv = csv.DictReader(RunID_table_file_obj)
-            Run_IDs = [row["Run_ID"] for row in table_csv]
         for Run_ID in Run_IDs:
             prefetch_dir_path = os.path.join(SRA_data_dir, Run_ID)
             if os.path.exists(prefetch_dir_path): ## skip if we have already prefetched the read data.
@@ -265,6 +269,29 @@ def download_fastq_reads(SRA_data_dir, RunID_table_file):
         os.chdir(my_cwd)
         return
 
+
+def all_fastq_data_exist(Run_IDs, SRA_data_dir):
+    ## check to see if all the expected files exist on disk (does not check for corrupted data).
+
+    ## the "-p" appends a slash '/' to all directories in the SRA_data_dir
+    ls_result = subprocess.run(f"ls -p {SRA_data_dir}", stdout=subprocess.PIPE, text=True)
+    SRA_data_file_list = ls_result.stdout.split()
+    prefetch_dirnames = [x.replace("/", "") for x in SRA_data_file_list if x.endswith("/")]
+    fastq_files = [x for x in SRA_data_file_list if x.endswith(".fastq")]
+    for Run_ID in Run_IDs:
+        ## does the prefetch directory exist?
+        if Run_ID not in SRA_data_file_list:
+            return False
+        ## does the first fastq file exist?
+        sra_fastq_path_1 = os.path.join(SRA_data_dir, Run_ID + "_1.fastq")
+        if not os.path.exists(sra_fastq_path_1):
+            return False
+        ## does the second fastq file exist?
+        sra_fastq_path_2 = os.path.join(SRA_data_dir, Run_ID + "_2.fastq"
+        if  not os.path.exists(sra_fastq_path_2):
+            return False
+    return True
+        
 
 def generate_gene_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
     print("making as output: ", outfile)
@@ -794,9 +821,12 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         ## make the temp directory if it doesn't exist.
         if not exists(tempdir):
             os.mkdir(tempdir)
-        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "2", "--n-threads", "4", "--file-colors"]
+        ## NOTE: Themisto developer V Jaakko notes that 2GB memory may not be enough.
+        ## set default to 4GB of memory, and see if the stochastic themisto bug
+        ## (in 0.02% of runs, themisto build hangs indefinitely instead of finishing in ~10s) persists.
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "4", "--n-threads", "4", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
     return
@@ -1522,7 +1552,7 @@ def pipeline_main():
 
     ## directory for multiread alignments constructed with minimap2.
     multiread_alignment_dir = "../results/multiread_alignments/"
-
+    
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
     if exists(RunID_table_csv):
@@ -1565,14 +1595,18 @@ def pipeline_main():
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
         SRA_download_start_time = time.time()  # Record the start time
-        download_fastq_reads(SRA_data_dir, RunID_table_csv)
+        Run_IDs = get_Run_IDs(RunID_table_csv)
+        download_fastq_reads(SRA_data_dir, RunIDs)
         SRA_download_end_time = time.time()  # Record the end time
         SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
         Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds"
         print(Stage3TimeMessage)
         logging.info(Stage3TimeMessage)
-        with open(stage_3_complete_file, "w") as stage_3_complete_log:
-            stage_3_complete_log.write("SRA read data downloaded successfully.\n")
+
+        ## check to see if all the expected files exist on disk (does not check for corrupted data).
+        if all_fastq_data_exist(Run_IDs, SRA_data_dir):
+            with open(stage_3_complete_file, "w") as stage_3_complete_log:
+                stage_3_complete_log.write("SRA read data downloaded successfully.\n")
         quit()
     
     #####################################################################################   
