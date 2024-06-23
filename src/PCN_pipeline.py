@@ -1353,10 +1353,10 @@ def make_PIRAGenomeDataFrame(
 
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     PIRAGenomeDataFrame = merged_readcount_df.join(
-    ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
-    ## I don't know why. So remove the newly made AnnotationAccession_right column.
+        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
+        ## I don't know why. So remove the newly made AnnotationAccession_right and SeqType_right columns.
         longest_replicon_row_df, on = "AnnotationAccession").select(
-        pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+        pl.col("*").exclude("AnnotationAccession_right", "SeqType_right")).with_columns(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
         ## and sort by the ThemistoID column.
         "ThemistoID"
@@ -1415,6 +1415,11 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     print(M.shape)
     print()
 
+    print(PIRAGenomeDataFrame)
+    print()
+    print(PIRAGenomeDataFrame.glimpse())
+    print()
+
     """
     Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
     ensures that Themisto Replicon IDs are sorted by replicon length in descending order
@@ -1442,7 +1447,7 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
         weighted_M_row_sums = weighted_M.sum(axis=1)
         ## Normalize each row by its sum
         normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
-
+        
         print(normalized_weighted_M)
         ## sum over the rows of the normalized and weighted M matrix to generate the
         ## multiread vector.
@@ -1458,10 +1463,72 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
         convergence_error = sum(updated_v - v)
         ## and update the PCN estimate vector v
         v = updated_v
+        
+    print(f"final convergence error: {convergence_error}")
+    print(f"final PCN estimate vector: {v}")
+
     return v
 
 
+def run_PIRA_test_suite():
+    ## Test 1: a simple test to check for convergence from very bad initial PCN estimates.
+    Test1_DataFrame = pl.DataFrame(
+        {
+            "replicon_length" : [1000000, 100000, 1000], ## log 10: 6, 5, 3
+            "ReadCount" : [1000000, 1000000, 1000000], ## log 10: 6, 6, 6
+            "InitialCopyNumberEstimate" : [1, 1, 1] ## should converge to: 1, 10, 1000
+        }
+    )
+
+    ## Test 1: the Match Matrix is negligible.
+    multi_read_row1 = [1, 1, 0]
+    test1_match_matrix_list_of_rows = [multi_read_row1]
+    Test1_M = np.array(test1_match_matrix_list_of_rows)
+    print("*"*80)
+    print("PIRA TEST 1: check convergence from bad initial PCN estimates given negligible match matrix")
+    run_PIRA(Test1_M, Test1_DataFrame)
+    print()
+
+
+    ## Test 2-- check what happens if the initial PCN vector contains zeros-- can estimates be updated
+    ## properly?
+    Test2_DataFrame = pl.DataFrame(
+        {
+            "replicon_length" : [1000000, 100000, 1000], ## log 10: 6, 5, 3
+            "ReadCount" : [1000000, 1000000, 1000000], ## log 10: 6, 6, 6
+            "InitialCopyNumberEstimate" : [1, 0, 0] ## should converge to: 1, 10, 1000
+        }
+    )
+
+    ## Test 2: the Match Matrix is negligible, and the initial PCN estimate contains zeros
+    print("*"*80)
+    print("PIRA TEST 2: check convergence from bad initial PCN estimates with zeros, given negligible match matrix")
+    run_PIRA(Test1_M, Test2_DataFrame)
+    print()
+    
+    ## Test 3: Case that Match Matrix is super important for correct PCN estimation.
+    Test3_DataFrame = pl.DataFrame(
+        {
+            "replicon_length" : [1000000, 100000, 1000], ## log 10: 6, 5, 3
+            "ReadCount" : [1000000, 0, 0], ## log 10: 6, 6, 6
+            "InitialCopyNumberEstimate" : [1, 1, 1] ## should converge to: 1, 10, 1000
+        }
+    )
+
+    ## Test 3: the Match Matrix is super important for accurate PCN estimation.
+    multi_read_row3 = [0, 1, 1]
+    test3_match_matrix_list_of_rows = [multi_read_row3] * 1000000
+    Test3_M = np.array(test3_match_matrix_list_of_rows)
+    print("*"*80)
+    print("PIRA TEST 3: check convergence when match matrix needed for accurate PCN estimation")
+    run_PIRA(Test3_M, Test3_DataFrame)
+    print()
+    
+    return
+
+
 def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
+    
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
 
@@ -1487,8 +1554,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
             ).rename({"ReadCount": "InitialReadCount"}) ## rename ReadCount to InitialReadCount
 
         ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
-        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
-        
+        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)       
         genome_dir = os.path.join(multiread_alignment_dir, genome)
         ## make a dictionary mapping reads to Themisto replicon IDs.
         multiread_mapping_dict = parse_multiread_alignments(genome_dir)
