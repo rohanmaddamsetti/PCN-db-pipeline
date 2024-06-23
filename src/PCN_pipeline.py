@@ -249,7 +249,8 @@ def download_fastq_reads(SRA_data_dir, Run_IDs):
             if os.path.exists(prefetch_dir_path): ## skip if we have already prefetched the read data.
                 continue
             ## prefetch will create the prefetch_dir_path automatically-- give it the SRA_data_dir.
-            prefetch_args = ["prefetch", Run_ID, "-O", SRA_data_dir]
+            ## default max-size is 20G, but some datasets are larger. So kick up the max-size.
+            prefetch_args = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
             print (" ".join(prefetch_args))
             subprocess.run(prefetch_args)
         print("prefetch step completed.")
@@ -287,7 +288,7 @@ def all_fastq_data_exist(Run_IDs, SRA_data_dir):
         if not os.path.exists(sra_fastq_path_1):
             return False
         ## does the second fastq file exist?
-        sra_fastq_path_2 = os.path.join(SRA_data_dir, Run_ID + "_2.fastq"
+        sra_fastq_path_2 = os.path.join(SRA_data_dir, Run_ID + "_2.fastq")
         if  not os.path.exists(sra_fastq_path_2):
             return False
     return True
@@ -1596,7 +1597,7 @@ def pipeline_main():
     else:
         SRA_download_start_time = time.time()  # Record the start time
         Run_IDs = get_Run_IDs(RunID_table_csv)
-        download_fastq_reads(SRA_data_dir, RunIDs)
+        download_fastq_reads(SRA_data_dir, Run_IDs)
         SRA_download_end_time = time.time()  # Record the end time
         SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
         Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds"
