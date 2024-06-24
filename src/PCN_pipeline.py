@@ -1554,13 +1554,16 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
             ).rename({"ReadCount": "InitialReadCount"}) ## rename ReadCount to InitialReadCount
 
         ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
-        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)       
-        genome_dir = os.path.join(multiread_alignment_dir, genome)
+        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
+        
         ## make a dictionary mapping reads to Themisto replicon IDs.
+        genome_dir = os.path.join(multiread_alignment_dir, genome)
         multiread_mapping_dict = parse_multiread_alignments(genome_dir)
+        
         ## initialize the data structures for PIRA.
         MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
             multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
+
         ## now run PIRA for this genome.
         PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
         ## WORKING HERE  !!!!!!!!!!!!!!!!!!!!!!
@@ -1907,7 +1910,7 @@ def pipeline_main():
         ## Naive PCN calculation, ignoring multireplicon reads.
         naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
         ## Simple PCN calculation, evenly distributing multireplicon reads over chromosomes and plasmids.
-        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)        
+        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)
         stage16_end_time = time.time()  # Record the end time
         stage16_execution_time = stage16_end_time - stage16_start_time
         Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds"
