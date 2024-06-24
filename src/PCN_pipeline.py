@@ -67,7 +67,7 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
     return(sra_id)
 
 
-def get_Run_IDs(sra_id):
+def fetch_Run_IDs_with_pysradb(sra_id):
     ## pysradb must be in $PATH.
     pysradb_command = f'pysradb metadata {sra_id}'
     pysradb_attempts = 5
@@ -112,7 +112,7 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
         for RefSeq_accession in refseq_ids:
             my_SRA_ID = get_SRA_ID_from_RefSeqID(RefSeq_accession)
             if my_SRA_ID == "NA": continue ## skip genomes without SRA data.
-            Run_IDs = get_Run_IDs(my_SRA_ID)
+            Run_IDs = fetch_Run_IDs_with_pysradb(my_SRA_ID)
             for my_Run_ID in Run_IDs:
                 if my_Run_ID == "0" or my_Run_ID == "nan": continue ## skip bad Run_IDs
                 row = f"{RefSeq_accession},{my_SRA_ID},{my_Run_ID}\n"
@@ -233,7 +233,7 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     return
  
 
-def get_Run_IDs(RunID_table_file):
+def get_Run_IDs_from_RunID_table(RunID_table_file):
     Run_IDs = list()
     with open(RunID_table_file, "r") as RunID_table_fh:
         table_csv = csv.DictReader(RunID_table_fh)
@@ -1669,7 +1669,7 @@ def pipeline_main():
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
         SRA_download_start_time = time.time()  # Record the start time
-        Run_IDs = get_Run_IDs(RunID_table_csv)
+        Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
         download_fastq_reads(SRA_data_dir, Run_IDs)
         SRA_download_end_time = time.time()  # Record the end time
         SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
