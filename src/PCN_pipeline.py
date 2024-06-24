@@ -275,7 +275,8 @@ def all_fastq_data_exist(Run_IDs, SRA_data_dir):
     ## check to see if all the expected files exist on disk (does not check for corrupted data).
 
     ## the "-p" appends a slash '/' to all directories in the SRA_data_dir
-    ls_result = subprocess.run(f"ls -p {SRA_data_dir}", stdout=subprocess.PIPE, text=True)
+    ls_cmd_args = ["ls", "-p", SRA_data_dir]
+    ls_result = subprocess.run(ls_cmd_args, stdout=subprocess.PIPE, text=True)
     SRA_data_file_list = ls_result.stdout.split()
     prefetch_dirnames = [x.replace("/", "") for x in SRA_data_file_list if x.endswith("/")]
     fastq_files = [x for x in SRA_data_file_list if x.endswith(".fastq")]
