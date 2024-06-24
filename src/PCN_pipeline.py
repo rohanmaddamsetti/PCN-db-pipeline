@@ -90,6 +90,8 @@ def get_Run_IDs(sra_id):
         rows = pysradb_output_str.strip().split('\n')
         ## the Run_ID is the 3rd field from the end.
         run_accessions = [row.split("\t")[-3] for row in rows if ("Illumina") in row and ("WGS") in row]
+        ## filter out bad run_accessions (either "0" or "nan")
+        run_accessions = [x for x in run_accessions if (x != "0" and x != "nan")]
     return(run_accessions)
 
 
@@ -112,6 +114,7 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
             if my_SRA_ID == "NA": continue ## skip genomes without SRA data.
             Run_IDs = get_Run_IDs(my_SRA_ID)
             for my_Run_ID in Run_IDs:
+                if my_Run_ID == "0" or my_Run_ID == "nan": continue ## skip bad Run_IDs
                 row = f"{RefSeq_accession},{my_SRA_ID},{my_Run_ID}\n"
                 print(row) ## just to show that the program is running properly.
                 RunID_table_outfile_obj.write(row)
