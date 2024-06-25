@@ -14,12 +14,7 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 Currently, this pipeline only analyzes Illumina short-read data.
 Empirically, long-read data do not give accurate PCN information.
 
-CRITICAL TODO: utilize reads shared among replicons (multireads) to more accurately infer PCN.
-In principle we can leverage reads mapping to multiple replicons (multireads) in two ways.
-
-TODO 1) estimate PCN more accurately, using the PIRA algorithm that Lingchong and I devised.
-
-TODO 2) we can use multireads to infer the size of duplicated/repeat regions
+TODO: see if we can use multireads to infer the size of duplicated/repeat regions
 shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
 for instance, determining the extent of HGT within genomes between replicons.
 
@@ -68,6 +63,10 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
 
 
 def fetch_Run_IDs_with_pysradb(sra_id):
+
+    ## DEBUGGING:
+    sra_id = "ERR2929689"
+    
     ## pysradb must be in $PATH.
     pysradb_command = f'pysradb metadata {sra_id}'
     pysradb_attempts = 5
@@ -88,10 +87,14 @@ def fetch_Run_IDs_with_pysradb(sra_id):
         # Splits the metadata of the SRA ID into respective rows. 
         # And isolates the rows that use the Illumina instrument.
         rows = pysradb_output_str.strip().split('\n')
-        ## the Run_ID is the 3rd field from the end.
-        run_accessions = [row.split("\t")[-3] for row in rows if ("Illumina") in row and ("WGS") in row]
-        ## filter out bad run_accessions (either "0" or "nan")
-        run_accessions = [x for x in run_accessions if (x != "0" and x != "nan")]
+        run_accessions = list()
+        for i, row in enumerate(rows):
+            if i == 0: continue ## skip the header
+            study_accession, study_title, experiment_accession, experiment_title, experiment_desc, organism_taxid, organism_name, library_name, library_strategy, library_source, library_selection, library_layout, sample_accession, sample_title, instrument, instrument_model, instrument_model_desc, total_spots, total_size, run_accession, run_total_spots, run_total_bases = row.split("\t")
+            ## if there is data associated with this accession (total_size > 0),
+            ## this is Illumina WGS data, and the run_accesion is valid, then add to the list of run_accessions.
+            if int(total_size) > 0 and library_strategy == "WGS" and instrument_model_desc == "ILLUMINA" and run_accession != "nan" and run_accession != "0":
+                run_accessions.append(run_accession)
     return(run_accessions)
 
 
@@ -262,6 +265,7 @@ def download_fastq_reads(SRA_data_dir, Run_IDs):
         for Run_ID in Run_IDs:
             sra_fastq_file_1 = Run_ID + "_1.fastq"
             sra_fastq_file_2 = Run_ID + "_2.fastq"
+            ## since we ran os.chdir(SRA_data_dir), this next line should work right.
             if os.path.exists(sra_fastq_file_1) and os.path.exists(sra_fastq_file_2):
                 continue
             else:
@@ -276,16 +280,12 @@ def download_fastq_reads(SRA_data_dir, Run_IDs):
 
 def all_fastq_data_exist(Run_IDs, SRA_data_dir):
     ## check to see if all the expected files exist on disk (does not check for corrupted data).
-
-    ## the "-p" appends a slash '/' to all directories in the SRA_data_dir
-    ls_cmd_args = ["ls", "-p", SRA_data_dir]
-    ls_result = subprocess.run(ls_cmd_args, stdout=subprocess.PIPE, text=True)
-    SRA_data_file_list = ls_result.stdout.split()
-    prefetch_dirnames = [x.replace("/", "") for x in SRA_data_file_list if x.endswith("/")]
-    fastq_files = [x for x in SRA_data_file_list if x.endswith(".fastq")]
+    SRA_file_list = os.listdir(SRA_data_dir)
+    prefetch_dirs = [f for f in SRA_file_list if os.path.isdir(os.path.join(SRA_data_dir, f))]
+    fastq_files = [f for f in SRA_file_list if f.endswith(".fastq")]
     for Run_ID in Run_IDs:
         ## does the prefetch directory exist?
-        if Run_ID not in SRA_data_file_list:
+        if Run_ID not in SRA_file_list:
             return False
         ## does the first fastq file exist?
         sra_fastq_path_1 = os.path.join(SRA_data_dir, Run_ID + "_1.fastq")
