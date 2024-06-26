@@ -90,11 +90,12 @@ def fetch_Run_IDs_with_pysradb(sra_id):
             fields = row.split("\t")
             try:
                 study_accession, study_title, experiment_accession, experiment_title, experiment_desc, organism_taxid, organism_name, library_name, library_strategy, library_source, library_selection, library_layout, sample_accession, sample_title, instrument, instrument_model, instrument_model_desc, total_spots, total_size, run_accession, run_total_spots, run_total_bases = fields
-            except ValueError: ## if the number of fields is wrong, then skip.
+                int_total_size = int(total_size)
+            except ValueError: ## if either the number of fields is wrong, or if the typecast fails (say if total_size == "<NA>"),  then skip this run_accession.
                 continue
             ## if there is data associated with this accession (total_size > 0),
             ## this is Illumina WGS data, and the run_accession is valid, then add to the list of run_accessions.
-            if int(total_size) > 0 and library_strategy == "WGS" and instrument_model_desc == "ILLUMINA" and run_accession != "nan":
+            if int_total_size > 0 and library_strategy == "WGS" and instrument_model_desc == "ILLUMINA" and run_accession != "nan":
                 run_accessions.append(run_accession)
     return(run_accessions)
 
