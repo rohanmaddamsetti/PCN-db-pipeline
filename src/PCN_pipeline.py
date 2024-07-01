@@ -829,9 +829,10 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         if not exists(genome_index_dir):
             os.mkdir(genome_index_dir)
         ## set the index_prefix to write index files into the genome_index_dir.
-        index_prefix = os.path.join(themisto_index_dir, genome_index_dir, genome_id)
-        tempdir = os.path.join(themisto_index_dir, "temp")        
+        index_prefix = os.path.join(genome_index_dir, genome_id)
+
         ## make the temp directory if it doesn't exist.
+        tempdir = os.path.join(themisto_index_dir, "temp")
         if not exists(tempdir):
             os.mkdir(tempdir)
         ## NOTE: Themisto developer V Jaakko notes that 2GB memory may not be enough.
