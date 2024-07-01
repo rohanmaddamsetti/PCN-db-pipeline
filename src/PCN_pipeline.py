@@ -1177,6 +1177,20 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
         my_pseudoalignment_paths = [os.path.join(my_pseudoalignment_results_dir, x) for x in my_pseudoalignment_files]
 
         for cur_pseudoalignment_path in my_pseudoalignment_paths:
+            ## before sorting the pseudoalignment results, check whether the filtered multireads
+            ## for this pseudoalignment already exist on disk. If so, then skip--
+            ## don't repeat work that has already been done.
+
+            ## construct the path to the original fastq file.
+            my_fastq_file = basename(cur_pseudoalignment_path).split("_pseudoalignment.txt")[0] + ".fastq"
+            my_fastq_path = os.path.join(SRA_data_dir, my_fastq_file)
+            ## construct the path to the filtered fastq file.
+            my_filtered_fastq_file = "multireads_" + my_fastq_file
+            my_filtered_fastq_path = os.path.join(multiread_genome_dir, my_filtered_fastq_file)
+
+            ## now check to see if the filtered fastq file already exists.
+            if exists(my_filtered_fastq_path): continue ## if so, then don't repeat the work.
+            
             list_of_multiread_tuples = list()
             with open(cur_pseudoalignment_path, "r") as pseudoalignment_fh:
                 for line in pseudoalignment_fh:
@@ -1200,12 +1214,6 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
                 
                 ## IMPORTANT: read indices in the themisto pseudoalignments are zero-based (first index is 0).
                 multiread_indices = {x[0] for x in list_of_multiread_tuples} ## this is a set
-                ## construct the path to the original fastq file.
-                my_fastq_file = basename(cur_pseudoalignment_path).split("_pseudoalignment.txt")[0] + ".fastq"
-                my_fastq_path = os.path.join(SRA_data_dir, my_fastq_file)
-                ## construct the path to the filtered fastq file.
-                my_filtered_fastq_file = "multireads_" + my_fastq_file
-                my_filtered_fastq_path = os.path.join(multiread_genome_dir, my_filtered_fastq_file)
                 print(f"filtering {my_fastq_file} for multireads. multireads written into {my_filtered_fastq_path}")
                 ## write out the filtered reads
                 with open(my_filtered_fastq_path, "w") as filtered_fastq_fh:
