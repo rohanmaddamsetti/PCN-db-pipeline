@@ -1893,11 +1893,7 @@ def pipeline_main():
     else:
         stage14_start_time = time.time()  # Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        
         run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
-
-        quit()
-        
         stage14_end_time = time.time()  # Record the end time
         stage14_execution_time = stage14_end_time - stage14_start_time
         Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds"
