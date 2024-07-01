@@ -1254,7 +1254,7 @@ def make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir):
                             updated_header = ">" +  replicon_id_string + "|" + header_string
                             fasta_outfh.write(updated_header)
                         else:
-                            fasta_outfh.write(line)    
+                            fasta_outfh.write(line)
     return
 
 
