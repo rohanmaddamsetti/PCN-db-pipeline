@@ -1980,7 +1980,7 @@ def pipeline_main():
         print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
     else:
         stage19_start_time = time.time()  # Record the start time
-        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir, multiread_data_dir)
+        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir)
         stage19_end_time = time.time()  # Record the end time
         stage19_execution_time = stage19_end_time - stage19_start_time
         Stage19TimeMessage = f"Stage 19 (making FASTA reference genomes for multiread alignment) execution time: {stage19_execution_time} seconds"
