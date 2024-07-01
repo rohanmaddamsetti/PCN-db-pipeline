@@ -819,21 +819,27 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     for genome_id in os.listdir(themisto_ref_dir):
         ## get the actual path for this directory
         ref_fasta_dir = os.path.join(themisto_ref_dir, genome_id)
-        ## make sure that this path is real, and not an artifact of some weird file in this directory
+        ## make sure that this path is real, and not an artifact of some weird file like .DS_Store in this directory
         if not os.path.isdir(ref_fasta_dir):
             continue
         index_input_filelist = os.path.join(ref_fasta_dir, genome_id + ".txt")
-        index_prefix = os.path.join(themisto_index_dir, genome_id)
-        tempdir = os.path.join(themisto_index_dir, "temp")
+
+        ## make the directory for the index files, if it does not exist.
+        genome_index_dir = os.path.join(themisto_index_dir, genome_id)
+        if not exists(genome_index_dir):
+            os.mkdir(genome_index_dir)
+        ## set the index_prefix to write index files into the genome_index_dir.
+        index_prefix = os.path.join(themisto_index_dir, genome_index_dir, genome_id)
+        tempdir = os.path.join(themisto_index_dir, "temp")        
         ## make the temp directory if it doesn't exist.
         if not exists(tempdir):
             os.mkdir(tempdir)
         ## NOTE: Themisto developer V Jaakko notes that 2GB memory may not be enough.
-        ## set default to 4GB of memory, and see if the stochastic themisto bug
+        ## set default to 6GB of memory, and see if the stochastic themisto bug
         ## (in 0.02% of runs, themisto build hangs indefinitely instead of finishing in ~10s) persists.
-        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "4", "--n-threads", "4", "--file-colors"]
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "6", "--n-threads", "4", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=6G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
     return
@@ -1887,7 +1893,11 @@ def pipeline_main():
     else:
         stage14_start_time = time.time()  # Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        
         run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
+
+        quit()
+        
         stage14_end_time = time.time()  # Record the end time
         stage14_execution_time = stage14_end_time - stage14_start_time
         Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds"
