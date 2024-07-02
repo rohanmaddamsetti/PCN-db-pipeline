@@ -864,6 +864,12 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
 
         ## make the file containing the paths to the sequencing read data for this genome.
         refseq_id = "_".join(genome_id.split("_")[:2])
+
+        ## check for inconsistencies between Run_ID_list and the genomes with themisto indices
+        if refseq_id not in RefSeq_to_SRA_RunList_dict.keys():
+            print(f"INCONSISTENCY ERROR: {refseq_id} not found in RunID_table.csv!")
+            continue
+        
         Run_ID_list = RefSeq_to_SRA_RunList_dict[refseq_id]
         ## make read_path_arg_list.
         readpath_list = list()
@@ -1893,7 +1899,7 @@ def pipeline_main():
         print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
     else:
         stage14_start_time = time.time()  # Record the start time
-        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)        
         run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
         stage14_end_time = time.time()  # Record the end time
         stage14_execution_time = stage14_end_time - stage14_start_time
