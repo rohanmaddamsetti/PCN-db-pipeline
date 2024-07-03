@@ -830,17 +830,15 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
             os.mkdir(genome_index_dir)
         ## set the index_prefix to write index files into the genome_index_dir.
         index_prefix = os.path.join(genome_index_dir, genome_id)
-
+        
         ## make the temp directory if it doesn't exist.
-        tempdir = os.path.join(themisto_index_dir, "temp")
+        tempdir = os.path.join(genome_index_dir, "temp")
         if not exists(tempdir):
             os.mkdir(tempdir)
-        ## NOTE: Themisto developer V Jaakko notes that 2GB memory may not be enough.
-        ## set default to 6GB of memory, and see if the stochastic themisto bug
-        ## (in 0.02% of runs, themisto build hangs indefinitely instead of finishing in ~10s) persists.
-        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "6", "--n-threads", "4", "--file-colors"]
+        
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "4", "--n-threads", "4", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=6G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
     return
@@ -851,9 +849,8 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
     if not exists(themisto_pseudoalignment_dir):
         os.mkdir(themisto_pseudoalignment_dir)
 
-    ## each directory in themisto_index_dir is named after the genome_id of the given genome--
-    ## HOWEVER-- we need to skip the "temp" directory in themisto_index_dir!
-    genome_id_list = [x for x in os.listdir(themisto_index_dir) if x != "temp"]
+    ## each directory in themisto_index_dir is named after the genome_id of the given genome.
+    genome_id_list = [x for x in os.listdir(themisto_index_dir)]
     for genome_id in genome_id_list:
         my_index_dir = os.path.join(themisto_index_dir, genome_id)
         ## make sure that this path is real, and not an artifact of some weird file in this directory
@@ -888,15 +885,15 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
             for readpath in readpath_list:
                 SRAtxtfile_fh.write(readpath + "\n")
 
-        tempdir = os.path.join(themisto_pseudoalignment_dir, "temp")
-        ## make the temp directory if it doesn't exist.
-        if not exists(tempdir):
-            os.mkdir(tempdir)
-
         ## make the directory for the pseudoalignments.
         my_pseudoalignment_output_dir = os.path.join(themisto_pseudoalignment_dir, genome_id)
         if not exists(my_pseudoalignment_output_dir):
             os.mkdir(my_pseudoalignment_output_dir)
+
+        ## make the temp directory if it doesn't exist.
+        tempdir = os.path.join(my_pseudoalignment_output_dir, "temp")
+        if not exists(tempdir):
+            os.mkdir(tempdir)
             
         ## we make corresponding pseudoalignment output files for each SRA dataset.
         ## This list goes into the output listfile.
@@ -910,7 +907,7 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         ## now run themisto pseudoalign.
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
-        slurm_string = "sbatch -p scavenger --mem=2G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
         print(slurm_string)
         subprocess.run(slurm_string, shell=True)
     return
