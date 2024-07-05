@@ -1183,7 +1183,8 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
     pseudoalignment_dirpaths = [x for x in paths_in_pseudoalignment_dir if os.path.isdir(x)]
 
     for my_pseudoalignment_results_dir in pseudoalignment_dirpaths:
-        my_pseudoalignment_files = [x for x in os.listdir(my_pseudoalignment_results_dir)]
+        ## make sure to ignore the temp directory by filtering by filename suffixes!
+        my_pseudoalignment_files = [x for x in os.listdir(my_pseudoalignment_results_dir) if x.endswith("_pseudoalignment.txt")]
         my_pseudoalignment_paths = [os.path.join(my_pseudoalignment_results_dir, x) for x in my_pseudoalignment_files]
 
         for cur_pseudoalignment_path in my_pseudoalignment_paths:
