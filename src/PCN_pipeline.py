@@ -1194,10 +1194,15 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
             ## construct the path to the original fastq file.
             my_fastq_file = basename(cur_pseudoalignment_path).split("_pseudoalignment.txt")[0] + ".fastq"
             my_fastq_path = os.path.join(SRA_data_dir, my_fastq_file)
+
             ## construct the path to the filtered fastq file.
+            my_genome = basename(my_pseudoalignment_results_dir)
+            ## note: multiread_genome_dir is only created if filtered multireads exist.
+            ## this means that this path only exists on disk if filtered multireads for this genome
+            ## were already written to disk in a previous call of this function.
+            multiread_genome_dir = os.path.join(multiread_data_dir, my_genome)
             my_filtered_fastq_file = "multireads_" + my_fastq_file
             my_filtered_fastq_path = os.path.join(multiread_genome_dir, my_filtered_fastq_file)
-
             ## now check to see if the filtered fastq file already exists.
             if exists(my_filtered_fastq_path): continue ## if so, then don't repeat the work.
             
@@ -1216,9 +1221,7 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
             ## if there are multireads, then filter the original fastq file for multireads.
             if len(list_of_multiread_tuples):
 
-                ## if there are multireads, then make multiread_genome_dir
-                my_genome = basename(my_pseudoalignment_results_dir)
-                multiread_genome_dir = os.path.join(multiread_data_dir, my_genome)
+                ## if there are multireads, then make multiread_genome_dir for this genome.
                 if not exists(multiread_genome_dir):
                     os.mkdir(multiread_genome_dir)
                 
