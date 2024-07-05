@@ -857,7 +857,7 @@ def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA
         if not os.path.isdir(my_index_dir):
             continue
         ## make the arguments relating to the paths to the index files for this genome.
-        my_index_prefix = os.path.join(themisto_index_dir, genome_id)
+        my_index_prefix = os.path.join(my_index_dir, genome_id)
 
         ## make the file containing the paths to the sequencing read data for this genome.
         refseq_id = "_".join(genome_id.split("_")[:2])
