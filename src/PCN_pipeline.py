@@ -1373,12 +1373,6 @@ def make_PIRAGenomeDataFrame(
          "SeqID" : replicon_seq_id_col,
          "SeqType" : replicon_seq_type_col,
          "AdditionalReadCount" : additional_readcount_col})
-
-
-    ## IMPORTANT: DEBUGGING MERGE STEP HERE!
-    ## The key problem is that there can be replicons in the additional_replicon_reads_df
-    ## that are not found in my_naive_themisto_PCN_df (plasmids that only have multireads).
-    ##raise AssertionError("DEBUGGING HERE")
     
     ## merge the DataFrames containing the ReadCounts,
     merged_readcount_df = my_naive_themisto_PCN_df.join(
@@ -1634,7 +1628,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
              my_PIRA_PCN_estimate_DataFrame])
 
     ## now save all_PIRA_estimates_DataFrame to disk.
-    all_PIRA_estimates_DataFrame.to_csv(PIRA_PCN_csv_file)
+    all_PIRA_estimates_DataFrame.write_csv(PIRA_PCN_csv_file)
     return
 
 
