@@ -1679,10 +1679,15 @@ def pipeline_main():
     if exists(stage_2_complete_file):
         print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
     else:
+        refgenome_download_start_time = time.time()  ## Record the start time
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
         ## now download the reference genomes.
         fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir, reference_genome_log_file)
+        refgenome_download_end_time = time.time()  ## Record the end time
+        refgenome_download_execution_time = refgenome_download_end_time - refgenome_download_start_time
+        Stage2TimeMessage = f"Stage 2 (reference genome download) execution time: {refgenome_download_execution_time} seconds\n"
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
+            stage_2_complete_log.write(Stage2TimeMessage)
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
         quit()
     
@@ -1692,18 +1697,19 @@ def pipeline_main():
     if exists(stage_3_complete_file):
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
-        SRA_download_start_time = time.time()  # Record the start time
+        SRA_download_start_time = time.time()  ## Record the start time
         Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
         download_fastq_reads(SRA_data_dir, Run_IDs)
-        SRA_download_end_time = time.time()  # Record the end time
+        SRA_download_end_time = time.time()  ## Record the end time
         SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-        Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds"
+        Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds\n"
         print(Stage3TimeMessage)
         logging.info(Stage3TimeMessage)
 
         ## check to see if all the expected files exist on disk (does not check for corrupted data).
         if all_fastq_data_exist(Run_IDs, SRA_data_dir):
             with open(stage_3_complete_file, "w") as stage_3_complete_log:
+                stage_3_complete_log.write(Stage3TimeMessage)
                 stage_3_complete_log.write("SRA read data downloaded successfully.\n")
         quit()
     
@@ -1713,14 +1719,15 @@ def pipeline_main():
     if exists(stage_4_complete_file):
         print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
     else:
-        make_gene_fasta_ref_start_time = time.time()  # Record the start time
+        make_gene_fasta_ref_start_time = time.time()  ## Record the start time
         make_NCBI_gene_fasta_refs_for_kallisto(reference_genome_dir, kallisto_gene_ref_dir)
-        make_gene_fasta_ref_end_time = time.time()  # Record the end time
+        make_gene_fasta_ref_end_time = time.time()  ## Record the end time
         make_gene_fasta_ref_execution_time = make_gene_fasta_ref_end_time - make_gene_fasta_ref_start_time
-        Stage4TimeMessage = f"Stage 4 (making gene-level FASTA references for kallisto) execution time: {make_gene_fasta_ref_execution_time} seconds"
+        Stage4TimeMessage = f"Stage 4 (making gene-level FASTA references for kallisto) execution time: {make_gene_fasta_ref_execution_time} seconds\n"
         print(Stage4TimeMessage)
         logging.info(Stage4TimeMessage)
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
+            stage_4_complete_log.write(Stage4TimeMessage)
             stage_4_complete_log.write("Gene-level FASTA reference sequences for kallisto finished successfully.\n")
         quit()
 
@@ -1729,15 +1736,16 @@ def pipeline_main():
     if exists(stage_5_complete_file):
         print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
     else:
-        make_replicon_fasta_ref_start_time = time.time()  # Record the start time
+        make_replicon_fasta_ref_start_time = time.time()  ## Record the start time
         make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
-        make_replicon_fasta_ref_end_time = time.time()  # Record the end time
+        make_replicon_fasta_ref_end_time = time.time()  ## Record the end time
         make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
-        Stage5TimeMessage = f"Stage 5 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds"
+        Stage5TimeMessage = f"Stage 5 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
 
         print(Stage5TimeMessage)
         logging.info(Stage5TimeMessage)
         with open(stage_5_complete_file, "w") as stage_5_complete_log:
+            stage_5_complete_log.write(Stage5TimeMessage)
             stage_5_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
         quit()
 
@@ -1747,14 +1755,15 @@ def pipeline_main():
     if exists(stage_6_complete_file):
         print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
     else:
-        make_kallisto_gene_index_start_time = time.time()  # Record the start time
+        make_kallisto_gene_index_start_time = time.time()  ## Record the start time
         make_NCBI_kallisto_indices(kallisto_gene_ref_dir, kallisto_gene_index_dir)
-        make_kallisto_gene_index_end_time = time.time()  # Record the end time
+        make_kallisto_gene_index_end_time = time.time()  ## Record the end time
         make_kallisto_gene_index_execution_time = make_kallisto_gene_index_end_time - make_kallisto_gene_index_start_time
-        Stage6TimeMessage = f"Stage 6 (making gene-indices for kallisto) execution time: {make_kallisto_gene_index_execution_time} seconds"
+        Stage6TimeMessage = f"Stage 6 (making gene-indices for kallisto) execution time: {make_kallisto_gene_index_execution_time} seconds\n"
         print(Stage6TimeMessage)
         logging.info(Stage6TimeMessage)
         with open(stage_6_complete_file, "w") as stage_6_complete_log:
+            stage_6_complete_log.write(Stage6TimeMessage)
             stage_6_complete_log.write("kallisto gene-index file construction finished successfully.\n")
         quit()
 
@@ -1763,14 +1772,15 @@ def pipeline_main():
     if exists(stage_7_complete_file):
         print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
     else:
-        make_kallisto_replicon_index_start_time = time.time()  # Record the start time
+        make_kallisto_replicon_index_start_time = time.time()  ## Record the start time
         make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
-        make_kallisto_replicon_index_end_time = time.time()  # Record the end time
+        make_kallisto_replicon_index_end_time = time.time()  ## Record the end time
         make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
-        Stage7TimeMessage = f"Stage 7 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds"
+        Stage7TimeMessage = f"Stage 7 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
         print(Stage7TimeMessage)
         logging.info(Stage7TimeMessage)
         with open(stage_7_complete_file, "w") as stage_7_complete_log:
+            stage_7_complete_log.write(Stage7TimeMessage)
             stage_7_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
         quit()
 
@@ -1781,18 +1791,19 @@ def pipeline_main():
     if exists(stage_8_complete_file):
         print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
     else:
-        kallisto_quant_start_time = time.time()  # Record the start time
+        kallisto_quant_start_time = time.time()  ## Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
         
         run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_gene_index_dir, SRA_data_dir, kallisto_gene_quant_results_dir)
         run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
 
-        kallisto_quant_end_time = time.time()  # Record the end time
+        kallisto_quant_end_time = time.time()  ## Record the end time
         kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage8TimeMessage = f"Stage 8 (kallisto quant, gene-level and replicon-level) execution time: {kallisto_quant_execution_time} seconds"
+        Stage8TimeMessage = f"Stage 8 (kallisto quant, gene-level and replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
         print(Stage8TimeMessage)
         logging.info(Stage8TimeMessage)
         with open(stage_8_complete_file, "w") as stage_8_complete_log:
+            stage_8_complete_log.write(Stage8TimeMessage)
             stage_8_complete_log.write("kallisto quant, gene-level and replicon-level finished successfully.\n")
         quit()
             
@@ -1804,18 +1815,19 @@ def pipeline_main():
     if exists(stage_9_complete_file):
         print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
     else:
-        stage9_start_time = time.time()  # Record the start time
+        stage9_start_time = time.time()  ## Record the start time
         ## first make a file containing the copy number estimates for each individual gene from kallisto
         measure_NCBI_gene_copy_numbers(kallisto_gene_quant_results_dir, gene_copy_number_csv_file)
         ## then filter that output file for ARGs (faster to do in python than downstream in R).
         filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file)
 
-        stage9_end_time = time.time()  # Record the end time
+        stage9_end_time = time.time()  ## Record the end time
         stage9_execution_time = stage9_end_time - stage9_start_time
-        Stage9TimeMessage = f"Stage 9 (tabulate all gene copy numbers) execution time: {stage9_execution_time} seconds"
+        Stage9TimeMessage = f"Stage 9 (tabulate all gene copy numbers) execution time: {stage9_execution_time} seconds\n"
         print(Stage9TimeMessage)
         logging.info(Stage9TimeMessage)
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
+            stage_9_complete_log.write(Stage9TimeMessage)
             stage_9_complete_log.write("stage 9 (tabulating all gene copy numbers) finished successfully.\n")
         quit()
 
@@ -1825,16 +1837,17 @@ def pipeline_main():
     if exists(stage_10_complete_file):
         print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
     else:
-        stage10_start_time = time.time()  # Record the start time
+        stage10_start_time = time.time()  ## Record the start time
         calculate_NCBI_replicon_copy_numbers_from_genes(kallisto_gene_quant_results_dir, calculated_copy_number_csv_file)
         measure_NCBI_replicon_copy_numbers(kallisto_replicon_quant_results_dir, replicon_copy_number_csv_file)
 
-        stage10_end_time = time.time()  # Record the end time
+        stage10_end_time = time.time()  ## Record the end time
         stage10_execution_time = stage10_end_time - stage10_start_time
-        Stage10TimeMessage = f"Stage 10 (tabulate all replicon copy numbers) execution time: {stage10_execution_time} seconds"
+        Stage10TimeMessage = f"Stage 10 (tabulate all replicon copy numbers) execution time: {stage10_execution_time} seconds\n"
         print(Stage10TimeMessage)
         logging.info(Stage10TimeMessage)
         with open(stage_10_complete_file, "w") as stage_10_complete_log:
+            stage_10_complete_log.write(Stage10TimeMessage)
             stage_10_complete_log.write("stage 10 (tabulating all replicon copy numbers) finished successfully.\n")
         quit()
 
@@ -1844,14 +1857,15 @@ def pipeline_main():
     if exists(stage_11_complete_file):
         print(f"{stage_11_complete_file} exists on disk-- skipping stage 11.")
     else:
-        stage11_start_time = time.time()  # Record the start time
+        stage11_start_time = time.time()  ## Record the start time
         tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
-        stage11_end_time = time.time()  # Record the end time
+        stage11_end_time = time.time()  ## Record the end time
         stage11_execution_time = stage11_end_time - stage11_start_time
-        Stage11TimeMessage = f"Stage 11 (tabulate all replicon lengths) execution time: {stage11_execution_time} seconds"
+        Stage11TimeMessage = f"Stage 11 (tabulate all replicon lengths) execution time: {stage11_execution_time} seconds\n"
         print(Stage11TimeMessage)
         logging.info(Stage11TimeMessage)
         with open(stage_11_complete_file, "w") as stage_11_complete_log:
+            stage_11_complete_log.write(Stage11TimeMessage)
             stage_11_complete_log.write("stage 11 (tabulating all replicon lengths) finished successfully.\n")
         quit()
             
@@ -1864,14 +1878,15 @@ def pipeline_main():
     if exists(stage_12_complete_file):
         print(f"{stage_12_complete_file} exists on disk-- skipping stage 12.")
     else:
-        stage12_start_time = time.time()  # Record the start time
+        stage12_start_time = time.time()  ## Record the start time
         make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
-        stage12_end_time = time.time()  # Record the end time
+        stage12_end_time = time.time()  ## Record the end time
         stage12_execution_time = stage12_end_time - stage12_start_time
-        Stage12TimeMessage = f"Stage 12 (making fasta references for themisto) execution time: {stage12_execution_time} seconds"
+        Stage12TimeMessage = f"Stage 12 (making fasta references for themisto) execution time: {stage12_execution_time} seconds\n"
         print(Stage12TimeMessage)
         logging.info(Stage12TimeMessage)
         with open(stage_12_complete_file, "w") as stage_12_complete_log:
+            stage_12_complete_log.write(Stage12TimeMessage)
             stage_12_complete_log.write("stage 12 (making fasta references for themisto) finished successfully.\n")
         quit()
         
@@ -1881,14 +1896,15 @@ def pipeline_main():
     if exists(stage_13_complete_file):
         print(f"{stage_13_complete_file} exists on disk-- skipping stage 13.")
     else:
-        stage13_start_time = time.time()  # Record the start time
+        stage13_start_time = time.time()  ## Record the start time
         make_NCBI_themisto_indices(themisto_replicon_ref_dir, themisto_replicon_index_dir)
-        stage13_end_time = time.time()  # Record the end time
+        stage13_end_time = time.time()  ## Record the end time
         stage13_execution_time = stage13_end_time - stage13_start_time
-        Stage13TimeMessage = f"Stage 13 (making indices for themisto) execution time: {stage13_execution_time} seconds"
+        Stage13TimeMessage = f"Stage 13 (making indices for themisto) execution time: {stage13_execution_time} seconds\n"
         print(Stage13TimeMessage)
         logging.info(Stage13TimeMessage)
         with open(stage_13_complete_file, "w") as stage_13_complete_log:
+            stage_13_complete_log.write(Stage13TimeMessage)
             stage_13_complete_log.write("stage 13 (making indices for themisto) finished successfully.\n")
         quit()
         
@@ -1899,15 +1915,16 @@ def pipeline_main():
     if exists(stage_14_complete_file):
         print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
     else:
-        stage14_start_time = time.time()  # Record the start time
+        stage14_start_time = time.time()  ## Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)        
         run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
-        stage14_end_time = time.time()  # Record the end time
+        stage14_end_time = time.time()  ## Record the end time
         stage14_execution_time = stage14_end_time - stage14_start_time
-        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds"
+        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds\n"
         print(Stage14TimeMessage)
         logging.info(Stage14TimeMessage)
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
+            stage_14_complete_log.write(Stage14TimeMessage)
             stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
         quit()
         
@@ -1917,14 +1934,15 @@ def pipeline_main():
     if exists(stage_15_complete_file):
         print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
     else:
-        stage15_start_time = time.time()  # Record the start time
+        stage15_start_time = time.time()  ## Record the start time
         summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
-        stage15_end_time = time.time()  # Record the end time
+        stage15_end_time = time.time()  ## Record the end time
         stage15_execution_time = stage15_end_time - stage15_start_time
-        Stage15TimeMessage = f"Stage 15 (themisto pseudoalignment summarization) execution time: {stage15_execution_time} seconds"
+        Stage15TimeMessage = f"Stage 15 (themisto pseudoalignment summarization) execution time: {stage15_execution_time} seconds\n"
         print(Stage15TimeMessage)
         logging.info(Stage15TimeMessage)
         with open(stage_15_complete_file, "w") as stage_15_complete_log:
+            stage_15_complete_log.write(Stage15TimeMessage)
             stage_15_complete_log.write("stage 15 (themisto pseudoalignment summarization) finished successfully.\n")
         quit()
         
@@ -1934,17 +1952,18 @@ def pipeline_main():
     if exists(stage_16_complete_file):
         print(f"{stage_16_complete_file} exists on disk-- skipping stage 16.")
     else:
-        stage16_start_time = time.time()  # Record the start time
+        stage16_start_time = time.time()  ## Record the start time
         ## Naive PCN calculation, ignoring multireplicon reads.
         naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
         ## Simple PCN calculation, evenly distributing multireplicon reads over chromosomes and plasmids.
         simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)
-        stage16_end_time = time.time()  # Record the end time
+        stage16_end_time = time.time()  ## Record the end time
         stage16_execution_time = stage16_end_time - stage16_start_time
-        Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds"
+        Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds\n"
         print(Stage16TimeMessage)
         logging.info(Stage16TimeMessage)
         with open(stage_16_complete_file, "w") as stage_16_complete_log:
+            stage_16_complete_log.write(Stage16TimeMessage)
             stage_16_complete_log.write("stage 16 (themisto PCN estimates) finished successfully.\n")
         quit()
 
@@ -1954,14 +1973,15 @@ def pipeline_main():
     if exists(stage_17_complete_file):
         print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
     else:
-        stage17_start_time = time.time()  # Record the start time
+        stage17_start_time = time.time()  ## Record the start time
         make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
-        stage17_end_time = time.time()  # Record the end time
+        stage17_end_time = time.time()  ## Record the end time
         stage17_execution_time = stage17_end_time - stage17_start_time
-        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds"
+        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds\n"
         print(Stage17TimeMessage)
         logging.info(Stage17TimeMessage)
         with open(stage_17_complete_file, "w") as stage_17_complete_log:
+            stage_17_complete_log.write(Stage17TimeMessage)
             stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
         quit()
 
@@ -1976,14 +1996,15 @@ def pipeline_main():
     if exists(stage_18_complete_file):
         print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
     else:
-        stage18_start_time = time.time()  # Record the start time
+        stage18_start_time = time.time()  ## Record the start time
         filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
-        stage18_end_time = time.time()  # Record the end time
+        stage18_end_time = time.time()  ## Record the end time
         stage18_execution_time = stage18_end_time - stage18_start_time
-        Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds"
+        Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds\n"
         print(Stage18TimeMessage)
         logging.info(Stage18TimeMessage)
         with open(stage_18_complete_file, "w") as stage_18_complete_log:
+            stage_18_complete_log.write(Stage18TimeMessage)
             stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
         quit()
 
@@ -1993,14 +2014,15 @@ def pipeline_main():
     if exists(stage_19_complete_file):
         print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
     else:
-        stage19_start_time = time.time()  # Record the start time
+        stage19_start_time = time.time()  ## Record the start time
         make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir)
-        stage19_end_time = time.time()  # Record the end time
+        stage19_end_time = time.time()  ## Record the end time
         stage19_execution_time = stage19_end_time - stage19_start_time
-        Stage19TimeMessage = f"Stage 19 (making FASTA reference genomes for multiread alignment) execution time: {stage19_execution_time} seconds"
+        Stage19TimeMessage = f"Stage 19 (making FASTA reference genomes for multiread alignment) execution time: {stage19_execution_time} seconds\n"
         print(Stage19TimeMessage)
         logging.info(Stage19TimeMessage)
         with open(stage_19_complete_file, "w") as stage_19_complete_log:
+            stage_19_complete_log.write(Stage19TimeMessage)
             stage_19_complete_log.write("stage 19 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
         quit()
 
@@ -2010,14 +2032,15 @@ def pipeline_main():
     if exists(stage_20_complete_file):
         print(f"{stage_20_complete_file} exists on disk-- skipping stage 20.")
     else:
-        stage20_start_time = time.time()  # Record the start time
+        stage20_start_time = time.time()  ## Record the start time
         align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
-        stage20_end_time = time.time()  # Record the end time
+        stage20_end_time = time.time()  ## Record the end time
         stage20_execution_time = stage20_end_time - stage20_start_time
-        Stage20TimeMessage = f"Stage 20 (aligning multireads with minimap2) execution time: {stage20_execution_time} seconds"
+        Stage20TimeMessage = f"Stage 20 (aligning multireads with minimap2) execution time: {stage20_execution_time} seconds\n"
         print(Stage20TimeMessage)
         logging.info(Stage20TimeMessage)
         with open(stage_20_complete_file, "w") as stage_20_complete_log:
+            stage_20_complete_log.write(Stage20TimeMessage)
             stage_20_complete_log.write("stage 20 (aligning multireads with minimap2) finished successfully.\n")
         quit()
 
@@ -2029,17 +2052,18 @@ def pipeline_main():
     if exists(stage_21_complete_file):
         print(f"{stage_21_complete_file} exists on disk-- skipping stage 21.")
     else:
-        stage21_start_time = time.time()  # Record the start time
+        stage21_start_time = time.time()  ## Record the start time
 
         run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
         quit() ## for debugging
         
-        stage21_end_time = time.time()  # Record the end time
+        stage21_end_time = time.time()  ## Record the end time
         stage21_execution_time = stage21_end_time - stage21_start_time
-        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments) execution time: {stage21_execution_time} seconds"
+        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments) execution time: {stage21_execution_time} seconds\n"
         print(Stage21TimeMessage)
         logging.info(Stage21TimeMessage)
         with open(stage_21_complete_file, "w") as stage_21_complete_log:
+            stage_21_complete_log.write(Stage21TimeMessage)
             stage_21_complete_log.write("stage 21 (parsing multiread alignments) finished successfully.\n")
         quit()
     
