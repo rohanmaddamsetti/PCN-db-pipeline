@@ -1360,7 +1360,7 @@ def make_PIRAGenomeDataFrame(
 
     ## merge the DataFrames containing the ReadCounts,
     merged_readcount_df = my_naive_themisto_PCN_df.join(
-        additional_replicon_reads_df, on="SeqID").with_columns(
+        additional_replicon_reads_df, how = "full", on="SeqID").with_columns(
             ## sum those ReadCounts,
         (pl.col("InitialReadCount") + pl.col("AdditionalReadCount")).alias("ReadCount")).with_columns(
             ## and re-calculate SequencingCoverage,
