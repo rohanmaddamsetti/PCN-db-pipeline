@@ -1606,8 +1606,10 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
         my_PIRA_PCN_estimate_DataFrame = PIRAGenomeDataFrame.with_columns([PIRA_PCN_estimate_series])
 
-        ## now append the DataFrame for this genome to the big DataFrame for all genomes.
-        all_PIRA_estimates_DataFrame.join(my_PIRA_PCN_estimate_DataFrame, how = 'right')
+        ## now concatenate the DataFrame for this genome to the big DataFrame for all genomes.
+        all_PIRA_estimates_DataFrame = pl.concat(
+            [all_PIRA_estimates_DataFrame,
+             my_PIRA_PCN_estimate_DataFrame])
 
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.to_csv(PIRA_PCN_csv_file)
