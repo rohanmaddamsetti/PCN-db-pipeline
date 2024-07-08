@@ -1555,7 +1555,7 @@ def run_PIRA_test_suite():
     return
 
 
-def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file):
+def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file):
     
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
@@ -1568,7 +1568,11 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     ## and filter for rows corresponding to genomes with multireads.
     naive_themisto_PCN_df = pl.read_csv(naive_themisto_PCN_csv_file).filter(
         pl.col("AnnotationAccession").is_in(genome_IDs_with_multireads))
+
+    ## Make an empty Polars DataFrame to contain all the results.
+    all_PIRA_estimates_DataFrame = pl.DataFrame()
     
+    ## now populate the all_PIRA_estimates_DataFrame.
     for genome in genomes_with_multireads:
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
@@ -1580,7 +1584,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
                 ## select only the columns we need.
                 ['AnnotationAccession', 'SeqID', 'SeqType', 'ReadCount', 'replicon_length']
             ).rename({"ReadCount": "InitialReadCount"}) ## rename ReadCount to InitialReadCount
-
+        
         ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
         themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
         
@@ -1591,12 +1595,23 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         ## initialize the data structures for PIRA.
         MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
             multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_naive_themisto_PCN_df)
-
+        
         ## now run PIRA for this genome.
         PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
-        ## WORKING HERE  !!!!!!!!!!!!!!!!!!!!!!
         print(f"PIRA PCN estimate vector for genome {genome} is: {PIRA_PCN_estimate_vector}")
-        quit() ## DEBUGGING
+
+        ## now add the PIRA estimates as a column to the PIRAGenomeDataFrame.
+        ## First convert the NumPy array to a Polars Series
+        PIRA_PCN_estimate_series = pl.Series("PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
+        ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
+        my_PIRA_PCN_estimate_DataFrame = PIRAGenomeDataFrame.with_columns([PIRA_PCN_estimate_series])
+
+        ## now append the DataFrame for this genome to the big DataFrame for all genomes.
+        all_PIRA_estimates_DataFrame.append(my_PIRA_PCN_estimate_DataFrame)
+
+    ## now save all_PIRA_estimates_DataFrame to disk.
+    all_PIRA_estimates_DataFrame.to_csv(PIRA_PCN_csv_file)
+    return
 
 
 
@@ -1650,6 +1665,9 @@ def pipeline_main():
 
     ## directory for multiread alignments constructed with minimap2.
     multiread_alignment_dir = "../results/multiread_alignments/"
+
+    ## this file contains PIRA estimates for the genomes that have multireads called by themisto.
+    PIRA_PCN_csv_file = "../results/PIRA-PCN-estimates.csv"
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2054,7 +2072,7 @@ def pipeline_main():
     else:
         stage21_start_time = time.time()  ## Record the start time
 
-        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file)
+        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
         quit() ## for debugging
         
         stage21_end_time = time.time()  ## Record the end time
@@ -2071,5 +2089,4 @@ def pipeline_main():
 
 
 pipeline_main()
-
 
