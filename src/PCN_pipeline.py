@@ -1340,29 +1340,49 @@ def make_PIRAGenomeDataFrame(
     """
 
     ## Turn the additional_replicon_reads_dict into a polars dataframe.
-    themisto_id_col = list()
-    additional_readcount_col = list()
+    ## I use themisto_ID_to_seq_metadata_dict to initialize the dataframe with zeros.
+    ## themisto_ID_to_seq_metadata_dict contains metadata for all replicons in the genome,
+    ## regardless of whether any reads mapped to that replicon.
+    ## To handle the cases that:
+    ## 1) a replicon only contains multireads, therefore it's naive PCN == 0, or
+    ## 2) a replicon does not have any multireads, therefore, it is not present in additional_replicon_reads_dict,
+    ## we use themisto_ID_to_seq_metadata_dict to initialize a polars dataframe containing
+    ## all replicons in our genome.
+
+    ## IMPORTANT sort the themisto ids (strings) by their numerical value.
+    themisto_id_col = sorted(themisto_ID_to_seq_metadata_dict.keys(), key=lambda x: int(x))
+
     replicon_seq_id_col = list()
     replicon_seq_type_col = list()
-    for themisto_id, readcount in additional_replicon_reads_dict.items():
+    additional_readcount_col = list()
+    for themisto_id in themisto_id_col:
         ## get the SeqID and SeqType given the Themisto ID.
         seq_id, seq_type = themisto_ID_to_seq_metadata_dict[themisto_id]
-        ## now append to the columns for the new DataFrame.
-        themisto_id_col.append(themisto_id)
-        additional_readcount_col.append(readcount)
         replicon_seq_id_col.append(seq_id)
         replicon_seq_type_col.append(seq_type)
+        ## initialize the additional_readcount_col with zeros.
+        additional_readcount_col.append(0)
+
+    ## now update the values in additional_readcount_col using additional_replicon_reads_dict.
+    for themisto_id, readcount in additional_replicon_reads_dict.items():
+        additional_readcount_col[int(themisto_id)] = readcount
+        
     ## now make the DataFrame.
     additional_replicon_reads_df = pl.DataFrame(
-        {"ThemistoID" : themisto_id_col, "AdditionalReadCount" : additional_readcount_col,
-         "SeqID" : replicon_seq_id_col, "SeqType" : replicon_seq_type_col}
-    )
+        {"ThemistoID" : themisto_id_col,
+         "SeqID" : replicon_seq_id_col,
+         "SeqType" : replicon_seq_type_col,
+         "AdditionalReadCount" : additional_readcount_col})
 
+
+    ## IMPORTANT: DEBUGGING MERGE STEP HERE!
+    ## The key problem is that there can be replicons in the additional_replicon_reads_df
+    ## that are not found in my_naive_themisto_PCN_df (plasmids that only have multireads).
+    ##raise AssertionError("DEBUGGING HERE")
+    
     ## merge the DataFrames containing the ReadCounts,
     merged_readcount_df = my_naive_themisto_PCN_df.join(
-        ## IMPORTANT NOTE: THERE MAY BE A POLARS API CHANGE IN
-        ## WHICH "outer" SHOULD BE CHANGED TO "full"!!!
-        additional_replicon_reads_df, how = "outer", on="SeqID").with_columns(
+        additional_replicon_reads_df, on="SeqID").with_columns(
             ## sum those ReadCounts,
         (pl.col("InitialReadCount") + pl.col("AdditionalReadCount")).alias("ReadCount")).with_columns(
             ## and re-calculate SequencingCoverage,
@@ -1384,9 +1404,9 @@ def make_PIRAGenomeDataFrame(
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     PIRAGenomeDataFrame = merged_readcount_df.join(
         ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
-        ## I don't know why. So remove the newly made AnnotationAccession_right and SeqType_right columns.
+        ## I don't know why. So remove the newly made AnnotationAccession_right, SeqID_right, SeqType_right columns.
         longest_replicon_row_df, on = "AnnotationAccession").select(
-        pl.col("*").exclude("AnnotationAccession_right", "SeqType_right")).with_columns(
+        pl.col("*").exclude("AnnotationAccession_right", "SeqID_right", "SeqType_right")).with_columns(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
         ## and sort by the ThemistoID column.
         "ThemistoID"
