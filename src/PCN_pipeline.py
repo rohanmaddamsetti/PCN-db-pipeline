@@ -951,7 +951,8 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
                 with open(my_pseudoalignment_filepath) as my_pseudoalignment_fh:
                     for line in my_pseudoalignment_fh:
                         ## handle odd behavior in themisto: we need to sort the themisto replicon ID numbers ourselves.
-                        replicon_set_string = " ".join(sorted(line.strip().split()[1:]))
+                        ## IMPORTANT: sort the themisto ids (strings) by their numerical value.
+                        replicon_set_string = " ".join(sorted(line.strip().split()[1:], key=lambda x: int(x)))
                         if replicon_set_string in pseudoalignment_read_count_dict:
                             pseudoalignment_read_count_dict[replicon_set_string] += 1
                         else:
@@ -1349,7 +1350,7 @@ def make_PIRAGenomeDataFrame(
     ## we use themisto_ID_to_seq_metadata_dict to initialize a polars dataframe containing
     ## all replicons in our genome.
 
-    ## IMPORTANT sort the themisto ids (strings) by their numerical value.
+    ## IMPORTANT: sort the themisto ids (strings) by their numerical value.
     themisto_id_col = sorted(themisto_ID_to_seq_metadata_dict.keys(), key=lambda x: int(x))
 
     replicon_seq_id_col = list()
@@ -1590,6 +1591,17 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     
     ## now populate the all_PIRA_estimates_DataFrame.
     for genome in genomes_with_multireads:
+
+
+
+        
+        ## DEBUGGING!
+        if genome != "GCF_000174795.2_ASM17479v2_genomic": continue
+
+
+        
+
+        
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
