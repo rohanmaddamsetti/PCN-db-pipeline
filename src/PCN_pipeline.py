@@ -1283,12 +1283,11 @@ def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir
     
     genomes_with_multireads = [x for x in os.listdir(multiread_data_dir) if x.startswith("GCF")]
     for my_genome in genomes_with_multireads:
-
+        
         ## make a subdirectory for the multiread alignments.
         multiread_genome_alignment_dir = os.path.join(multiread_alignment_dir, my_genome)
         if not exists(multiread_genome_alignment_dir):
             os.mkdir(multiread_genome_alignment_dir)
-
         
         ref_genome_fasta_file = my_genome + ".fna"
         reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome, ref_genome_fasta_file)
@@ -1442,7 +1441,7 @@ def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_
 
     ## now set up the data structures for PIRA on this genome.
     MatchMatrix = np.array(match_matrix_list_of_rows)
-
+    
     """ Generate the DataFrame containing the ReadCounts,  replicon lengths, and initial PCN estimates.
     We update the results of the Naive PCN estimates from Themisto (results of stage 16)
     by adding the additional replicon reads found by re-aligning multireads
@@ -1458,6 +1457,7 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     ## Run PIRA for a genome, assuming that the zero-th index of the match matrix M is the chromosome for normalization.
     print(M)
     print(M.shape)
+    print(M.shape[0])
     print()
 
     print(PIRAGenomeDataFrame)
@@ -1476,42 +1476,50 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     v = PIRAGenomeDataFrame["InitialCopyNumberEstimate"].to_numpy()
     readcount_vector = PIRAGenomeDataFrame["ReadCount"].to_numpy()
     replicon_length_vector = PIRAGenomeDataFrame["replicon_length"].to_numpy()
-
-    convergence_error = 10000.0
-    ## Iterate PIRA until error converges to zero.
-    while convergence_error > epsilon:
-        print(f"current convergence error: {convergence_error}")
-        print(f"current PCN estimate vector: {v}")
-        ## Weight M by PCN guess v-- need to turn v into a diagonal matrix first.
-        diagonal_v = np.diag(v)
-        weighted_M = np.matmul(M, diagonal_v)
-        print(weighted_M)
-
-        ## Normalize rows of weighted_M to sum to 1: this the probabilistic read assignment.
-        ## Compute the sum of each row
-        weighted_M_row_sums = weighted_M.sum(axis=1)
-        ## Normalize each row by its sum
-        normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
-        
-        print(normalized_weighted_M)
-        ## sum over the rows of the normalized and weighted M matrix to generate the
-        ## multiread vector.
-        multiread_vector = normalized_weighted_M.sum(axis=0)
-        print(multiread_vector)
-
-        ## update the PCN estimate vector v using the multiread vector
-        unnormalized_v = (multiread_vector + readcount_vector) / replicon_length_vector
-        normalization_factor = unnormalized_v[0] ## coverage for the longest chromosome.
-        updated_v = unnormalized_v / normalization_factor
     
-        ## update the error estimate
-        convergence_error = sum(updated_v - v)
-        ## and update the PCN estimate vector v
-        v = updated_v
-        
-    print(f"final convergence error: {convergence_error}")
-    print(f"final PCN estimate vector: {v}")
+    """
+    M may be empty, in the case that all multireads uniquely mapped to chromosome or plasmid.
+    In this case, the PIRAGenomeDataFrame has already incorporated all available information,
+    so we should just return v, the vector containing the InitialCopyNumberEstimate.
 
+    I handle this logic by only running the PIRA loop if M is non-empty.
+    """ 
+    
+    if M.shape[0] > 0: ## only run PIRA if the Match Matrix M has rows.
+        convergence_error = 10000.0
+        ## Iterate PIRA until error converges to zero.
+        while convergence_error > epsilon:
+            print(f"current convergence error: {convergence_error}")
+            print(f"current PCN estimate vector: {v}")
+            ## Weight M by PCN guess v-- need to turn v into a diagonal matrix first.
+            diagonal_v = np.diag(v)
+            weighted_M = np.matmul(M, diagonal_v)
+            print(weighted_M)
+
+            ## Normalize rows of weighted_M to sum to 1: this the probabilistic read assignment.
+            ## Compute the sum of each row
+            weighted_M_row_sums = weighted_M.sum(axis=1)
+            ## Normalize each row by its sum
+            normalized_weighted_M = weighted_M / weighted_M_row_sums[:, np.newaxis]
+
+            print(normalized_weighted_M)
+            ## sum over the rows of the normalized and weighted M matrix to generate the
+            ## multiread vector.
+            multiread_vector = normalized_weighted_M.sum(axis=0)
+            print(multiread_vector)
+
+            ## update the PCN estimate vector v using the multiread vector
+            unnormalized_v = (multiread_vector + readcount_vector) / replicon_length_vector
+            normalization_factor = unnormalized_v[0] ## coverage for the longest chromosome.
+            updated_v = unnormalized_v / normalization_factor
+
+            ## update the error estimate
+            convergence_error = sum(updated_v - v)
+            ## and update the PCN estimate vector v
+            v = updated_v
+        print(f"final convergence error: {convergence_error}")
+
+    print(f"final PCN estimate vector: {v}")
     return v
 
 
@@ -1590,18 +1598,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     all_PIRA_estimates_DataFrame = pl.DataFrame()
     
     ## now populate the all_PIRA_estimates_DataFrame.
-    for genome in genomes_with_multireads:
-
-
-
-        
-        ## DEBUGGING!
-        if genome != "GCF_000174795.2_ASM17479v2_genomic": continue
-
-
-        
-
-        
+    for genome in genomes_with_multireads:        
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
@@ -2032,12 +2029,12 @@ def pipeline_main():
             stage_17_complete_log.write(Stage17TimeMessage)
             stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
         quit()
-
+    
     #####################################################################################
     ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
     #####################################################################################
     ## The Naive PCN calculation in Stage 16 generates the initial PCN vectors and saves them on disk.
-
+    
     #####################################################################################
     ## Stage 18: filter fastq reads for multireads.
     stage_18_complete_file = "../results/stage18.done"
@@ -2055,7 +2052,7 @@ def pipeline_main():
             stage_18_complete_log.write(Stage18TimeMessage)
             stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
         quit()
-
+    
     #####################################################################################
     ## Stage 19: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
     stage_19_complete_file = "../results/stage19.done"
