@@ -14,10 +14,6 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 Currently, this pipeline only analyzes Illumina short-read data.
 Empirically, long-read data do not give accurate PCN information.
 
-TODO: see if we can use multireads to infer the size of duplicated/repeat regions
-shared among replicons. This in itself is valuable data that can help us understand plasmid biology,
-for instance, determining the extent of HGT within genomes between replicons.
-
 """
 
 import subprocess
@@ -923,10 +919,12 @@ def map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, my_genome_d
             ## get the header from this fasta file.
             with open(fasta_file_path, "r") as fasta_fh:
                 my_header = fasta_fh.readline().strip()
+                my_seq = fasta_fh.readline().strip()
             fields = my_header.strip(">").split("|")
             SeqID = fields[0].split("=")[-1]
             SeqType = fields[1].split("=")[-1]
-            themisto_ID_to_seq_metadata_dict[str(i)] = (SeqID, SeqType)
+            SeqLength = len(my_seq)
+            themisto_ID_to_seq_metadata_dict[i] = (SeqID, SeqType, SeqLength)
     return themisto_ID_to_seq_metadata_dict
 
 
@@ -970,7 +968,8 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
                     SeqType = "NA"
                 elif len(replicon_ID_list) == 1:
                     my_replicon_ID = replicon_ID_list[0]
-                    SeqID, SeqType = themisto_ID_to_seq_metadata_dict[my_replicon_ID]
+                    ## the SeqLength parameter in themisto_ID_to_seq_metadata_dict is not used here.
+                    SeqID, SeqType, _ = themisto_ID_to_seq_metadata_dict[my_replicon_ID]
                 else:
                     SeqID = "&".join([themisto_ID_to_seq_metadata_dict[replicon_ID][0] for replicon_ID in replicon_ID_list])
                     SeqType = "multireplicon_sequence"
@@ -1320,7 +1319,7 @@ def parse_multiread_alignments(genome_dir):
                 ## see PAF format documentation here:
                 ## https://github.com/lh3/miniasm/blob/master/PAF.md
                 read_name = fields[0]
-                themisto_replicon_ID = fields[5].split("|")[0].split("=")[-1]
+                themisto_replicon_ID = int(fields[5].split("|")[0].split("=")[-1]) ## IMPORTANT: turn into an integer
                 
                 if read_name in multiread_mapping_dict:
                     multiread_mapping_dict[read_name].append(themisto_replicon_ID)
@@ -1349,17 +1348,18 @@ def make_PIRAGenomeDataFrame(
     ## we use themisto_ID_to_seq_metadata_dict to initialize a polars dataframe containing
     ## all replicons in our genome.
 
-    ## IMPORTANT: sort the themisto ids (strings) by their numerical value.
-    themisto_id_col = sorted(themisto_ID_to_seq_metadata_dict.keys(), key=lambda x: int(x))
-
+    themisto_id_col = sorted(themisto_ID_to_seq_metadata_dict.keys())
     replicon_seq_id_col = list()
     replicon_seq_type_col = list()
+    replicon_length_col = list()
     additional_readcount_col = list()
+    
     for themisto_id in themisto_id_col:
         ## get the SeqID and SeqType given the Themisto ID.
-        seq_id, seq_type = themisto_ID_to_seq_metadata_dict[themisto_id]
+        seq_id, seq_type, seq_length = themisto_ID_to_seq_metadata_dict[themisto_id]
         replicon_seq_id_col.append(seq_id)
         replicon_seq_type_col.append(seq_type)
+        replicon_length_col.append(seq_length)
         ## initialize the additional_readcount_col with zeros.
         additional_readcount_col.append(0)
 
@@ -1372,16 +1372,40 @@ def make_PIRAGenomeDataFrame(
         {"ThemistoID" : themisto_id_col,
          "SeqID" : replicon_seq_id_col,
          "SeqType" : replicon_seq_type_col,
+         "replicon_length" : replicon_length_col,
          "AdditionalReadCount" : additional_readcount_col})
-    
-    ## merge the DataFrames containing the ReadCounts,
-    merged_readcount_df = my_naive_themisto_PCN_df.join(
-        additional_replicon_reads_df, on="SeqID").with_columns(
-            ## sum those ReadCounts,
-        (pl.col("InitialReadCount") + pl.col("AdditionalReadCount")).alias("ReadCount")).with_columns(
-            ## and re-calculate SequencingCoverage,
-            (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
 
+    ## IMPORTANT: the previous code ensures that additional_replicon_reads_df
+    ## contains ALL replicons in the genome, even if no reads pseudoaligned or aligned to that replicon.
+    ## this may happen for short contigs that are annotated as plasmids or plasmid fragments in the
+    ## reference genome (example: genome GCF_017654585.1_ASM1765458v1).
+
+    ## To fill in missing values in the AnnotationAccession column after the merge with additional_replicon_reads_df,
+    ## get the unique value in the AnnotationAccession column in my_naive_themisto_PCN_df, and use this
+    ## to fill in the missing values.
+    my_AnnotationAccession = my_naive_themisto_PCN_df.select(pl.col('AnnotationAccession').unique())
+    assert len(my_AnnotationAccession) == 1 ## make sure this value is unique!
+
+    
+    ## merge the DataFrames containing the ReadCounts.
+    merged_readcount_df = additional_replicon_reads_df.join(
+        ## IMPORTANT: my_naive_themisto_PCN_df will NOT contain rows for replicons that didn't have
+        ## any reads pseudoalign to it. therefore, we need to left_join my_native_themisto_PCN_df to
+        ## additional_replicon_reads_df, which contains the data for ALL replicons in the genome,
+        ## even if the Count is zero.
+        my_naive_themisto_PCN_df, on="SeqID", how="left").with_columns(
+            ##fill in missing values in the AnnotationAccession column after the merge.
+            pl.col("AnnotationAccession").fill_null(my_AnnotationAccession)).select(
+                ## remove duplicate columns (possibly containing missing values)
+                ## that came from my_naive_themisto_PCN_df.
+                pl.col("*").exclude("replicon_length_right", "SeqType_right")).with_columns(
+                    ## set missing values in the InitialReadCount column to 0.
+                    pl.col("InitialReadCount").fill_null(strategy="zero")).with_columns(
+                        ## sum those ReadCounts,
+                        (pl.col("InitialReadCount") + pl.col("AdditionalReadCount")).alias("ReadCount")).with_columns(
+                            ## and re-calculate SequencingCoverage,
+                            (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
+    
     ## The following is a hack, following code in the function native_themisto_PCN_estimation(),
     ## to recalculate LongestRepliconCoverage and CopyNumber with the additional reads.
 
@@ -1402,8 +1426,9 @@ def make_PIRAGenomeDataFrame(
         longest_replicon_row_df, on = "AnnotationAccession").select(
         pl.col("*").exclude("AnnotationAccession_right", "SeqID_right", "SeqType_right")).with_columns(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
-        ## and sort by the ThemistoID column.
-        "ThemistoID"
+            ## and sort by the ThemistoID column.
+            ## IMPORTANT: 
+            "ThemistoID"
     )
     """
     Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
@@ -1434,8 +1459,7 @@ def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_
         else: ## the read maps to multiple replicons
             ## initialize a row of zeros, based on the number of replicons in this genome.
             match_matrix_rowlist = [0 for k in themisto_ID_to_seq_metadata_dict.keys()]
-            for x in replicon_list:
-                replicon_index = int(x)
+            for replicon_index in replicon_list:
                 match_matrix_rowlist[replicon_index] += 1
             match_matrix_list_of_rows.append(match_matrix_rowlist)
 
@@ -1455,6 +1479,7 @@ def initializePIRA(multiread_mapping_dict, themisto_ID_to_seq_metadata_dict, my_
 
 def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     ## Run PIRA for a genome, assuming that the zero-th index of the match matrix M is the chromosome for normalization.
+    print("RUNNING PIRA.")
     print(M)
     print(M.shape)
     print(M.shape[0])
@@ -1598,12 +1623,17 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     all_PIRA_estimates_DataFrame = pl.DataFrame()
     
     ## now populate the all_PIRA_estimates_DataFrame.
-    for genome in genomes_with_multireads:        
+    for genome in genomes_with_multireads:
         ## get the Naive PCN estimates for this particular genome.
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
         ## for filtering the naive PCN estimates for this genome with multireads
+
         
+        ## FOR DEBUGGING:
+        if genome_ID != "GCF_017654585.1_ASM1765458v1":
+            continue
+                
         my_naive_themisto_PCN_df = naive_themisto_PCN_df.filter(
             pl.col("AnnotationAccession") == genome_ID).select(
                 ## select only the columns we need.
@@ -1624,6 +1654,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         ## now run PIRA for this genome.
         PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
         print(f"PIRA PCN estimate vector for genome {genome} is: {PIRA_PCN_estimate_vector}")
+        print("*****************************************************************************************")
 
         ## now add the PIRA estimates as a column to the PIRAGenomeDataFrame.
         ## First convert the NumPy array to a Polars Series
