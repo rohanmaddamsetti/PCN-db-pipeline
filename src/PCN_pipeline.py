@@ -1482,12 +1482,11 @@ def run_PIRA(M, PIRAGenomeDataFrame, epsilon = 0.00001):
     print("RUNNING PIRA.")
     print(M)
     print(M.shape)
-    print(M.shape[0])
     print()
 
     print(PIRAGenomeDataFrame)
     print()
-    print(PIRAGenomeDataFrame.glimpse())
+    print(PIRAGenomeDataFrame.glimpse(max_items_per_column=100))
     print()
 
     """
@@ -1628,11 +1627,6 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         genome_ID = genome.replace("_genomic", "")
         ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
         ## for filtering the naive PCN estimates for this genome with multireads
-
-        
-        ## FOR DEBUGGING:
-        if genome_ID != "GCF_017654585.1_ASM1765458v1":
-            continue
                 
         my_naive_themisto_PCN_df = naive_themisto_PCN_df.filter(
             pl.col("AnnotationAccession") == genome_ID).select(
