@@ -2154,8 +2154,6 @@ def pipeline_main():
     else:
         stage21_start_time = time.time()  ## Record the start time
         run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
-        quit() ## FOR DEBUGGING
-        
         stage21_end_time = time.time()  ## Record the end time
         stage21_execution_time = stage21_end_time - stage21_start_time
         Stage21TimeMessage = f"Stage 21 (parsing multiread alignments) execution time: {stage21_execution_time} seconds\n"
