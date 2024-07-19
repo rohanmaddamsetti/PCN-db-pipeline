@@ -11,11 +11,8 @@ IMPORTANT: this script assumes it is being run on DCC if sys.platform == "linux"
 This means that users on a linux machine will need to modify a couple functions if they
 are running this code locally, and cannot use slurm to submit many jobs in parallel.
 
-Currently, this pipeline only analyzes Illumina short-read data.
+This pipeline only analyzes Illumina short-read data.
 Empirically, long-read data do not give accurate PCN information.
-
-CRITICAL TODO: check out the cases where there are no naive themisto PCN estimates for PIRA to use,
-but there do exist multireads. Figure out how to handle these cases.
 
 """
 
@@ -2163,7 +2160,37 @@ def pipeline_main():
             stage_21_complete_log.write(Stage21TimeMessage)
             stage_21_complete_log.write("stage 21 (parsing multiread alignments) finished successfully.\n")
         quit()
+
+    #####################################################################################
+    ## Stage 22: In order to benchmark accuracy, speed, and memory usage, estimate PCN for subsets
+    ## of genomes using minimap2.
+    ## TODO:
+    ## 1) write code to estimate PCN in a genome with minimap2.
+    ## 2) apply to a set of 100 random genomes.
+    ## 3) apply to a set of 100 random genomes that contain plasmids with PCN < 1.
+    ## This is to check whether the PCN < 1 results are an artifact, or are consistent with alignment-based approaches.
+
+    stage_22_complete_file = "../results/stage22.done"
+    if exists(stage_22_complete_file):
+        print(f"{stage_22_complete_file} exists on disk-- skipping stage 22.")
+    else:
+        stage22_start_time = time.time()  ## Record the start time
+        ##run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
+
+        quit() ## for debugging.
+        stage22_end_time = time.time()  ## Record the end time
+        stage22_execution_time = stage22_end_time - stage22_start_time
+        Stage22TimeMessage = f"Stage 22 (minimap2 PCN estimation) execution time: {stage22_execution_time} seconds\n"
+        print(Stage22TimeMessage)
+        logging.info(Stage22TimeMessage)
+        with open(stage_22_complete_file, "w") as stage_22_complete_log:
+            stage_22_complete_log.write(Stage22TimeMessage)
+            stage_22_complete_log.write("stage 22 (minimap2 PCN estimation) finished successfully.\n")
+        quit()
+
     
+
+        
     return
 
 
