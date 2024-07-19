@@ -1662,6 +1662,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
             my_naive_themisto_PCN_estimates_subset_df, on="SeqID", how="left").select(
                 ## remove duplicate columns that came from my_naive_themisto_PCN_esimates_subset_df.
                 pl.col("*").exclude(
+                    "ThemistoID_right",
                     "AnnotationAccession_right",
                     "SeqID_right",
                     "replicon_length_right",
@@ -1693,6 +1694,11 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
             [all_PIRA_estimates_DataFrame,
              my_PIRA_PCN_estimate_DataFrame])
 
+    ## arrange the columns of all_PIRA_estimates_DataFrame in a nice fashion.
+    all_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.select(
+        pl.col("AnnotationAccession", "SeqID", "SeqType",
+               "ThemistoID", "replicon_length", "InitialReadCount", "AdditionalReadCount", "ReadCount",
+               "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate", "PIRA_CopyNumberEstimate"))
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.write_csv(PIRA_PCN_csv_file)
     return
@@ -1702,6 +1708,10 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
 
 def pipeline_main():
 
+    ## ReadCount threshold for PCN estimates by pseudoalignment.
+    ## This is only used for filtering the final set of PCN estimates by pseudoalignment.
+    MIN_READ_COUNT = 10000 
+    
     run_log_file = "../results/PCN-pipeline-log.txt"
     ## Configure logging
     logging.basicConfig(filename=run_log_file, level=logging.INFO)
@@ -1747,6 +1757,8 @@ def pipeline_main():
 
     ## this file contains PIRA estimates for the genomes that have multireads called by themisto.
     PIRA_PCN_csv_file = "../results/PIRA-PCN-estimates.csv"
+
+    ## this file contains a list 
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2153,39 +2165,73 @@ def pipeline_main():
         run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
         stage21_end_time = time.time()  ## Record the end time
         stage21_execution_time = stage21_end_time - stage21_start_time
-        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments) execution time: {stage21_execution_time} seconds\n"
+        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments and running PIRA) execution time: {stage21_execution_time} seconds\n"
         print(Stage21TimeMessage)
         logging.info(Stage21TimeMessage)
         with open(stage_21_complete_file, "w") as stage_21_complete_log:
             stage_21_complete_log.write(Stage21TimeMessage)
-            stage_21_complete_log.write("stage 21 (parsing multiread alignments) finished successfully.\n")
+            stage_21_complete_log.write("stage 21 (parsing multiread alignments and running PIRA) finished successfully.\n")
         quit()
 
     #####################################################################################
-    ## Stage 22: In order to benchmark accuracy, speed, and memory usage, estimate PCN for subsets
+    ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2.
+    #####################################################################################
+    ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for subsets
     ## of genomes using minimap2.
+
     ## TODO:
     ## 1) write code to estimate PCN in a genome with minimap2.
-    ## 2) apply to a set of 100 random genomes.
-    ## 3) apply to a set of 100 random genomes that contain plasmids with PCN < 1.
+    ## 2) apply to a set of 100 random genomes that contain plasmids with PCN < 1.
     ## This is to check whether the PCN < 1 results are an artifact, or are consistent with alignment-based approaches.
+    
+    #####################################################################################
+    ## Stage 22: choose a set of 100 random genomes that contain plasmids with PCN < 1
+    ## and ReadCount > MIN_READ_COUNT.
 
     stage_22_complete_file = "../results/stage22.done"
     if exists(stage_22_complete_file):
         print(f"{stage_22_complete_file} exists on disk-- skipping stage 22.")
     else:
         stage22_start_time = time.time()  ## Record the start time
-        ##run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
+        
+        ## at random, choose 100 genomes containing a plasmid with PCN < 1
+        ## and ReadCount > MIN_READ_COUNT.
 
+        ## WORKING HERE
+    
         quit() ## for debugging.
         stage22_end_time = time.time()  ## Record the end time
         stage22_execution_time = stage22_end_time - stage22_start_time
-        Stage22TimeMessage = f"Stage 22 (minimap2 PCN estimation) execution time: {stage22_execution_time} seconds\n"
+        Stage22TimeMessage = f"Stage 22 (choosing 100 random genomes with PCN < 1) execution time: {stage22_execution_time} seconds\n"
         print(Stage22TimeMessage)
         logging.info(Stage22TimeMessage)
         with open(stage_22_complete_file, "w") as stage_22_complete_log:
             stage_22_complete_log.write(Stage22TimeMessage)
-            stage_22_complete_log.write("stage 22 (minimap2 PCN estimation) finished successfully.\n")
+            stage_22_complete_log.write("stage 22 (choosing 100 random genomes with PCN < 1) finished successfully.\n")
+        quit()
+
+
+    #####################################################################################
+    ## Stage 23: run minimap2 on the set of 100 genomes chosen in Stage 22.
+
+    stage_23_complete_file = "../results/stage23.done"
+    if exists(stage_23_complete_file):
+        print(f"{stage_23_complete_file} exists on disk-- skipping stage 23.")
+    else:
+        stage23_start_time = time.time()  ## Record the start time
+        
+        ## CODE GOES HERE
+
+    
+        quit() ## for debugging.
+        stage23_end_time = time.time()  ## Record the end time
+        stage23_execution_time = stage23_end_time - stage23_start_time
+        Stage23TimeMessage = f"Stage 23 (minimap2 PCN estimation) execution time: {stage23_execution_time} seconds\n"
+        print(Stage23TimeMessage)
+        logging.info(Stage23TimeMessage)
+        with open(stage_23_complete_file, "w") as stage_23_complete_log:
+            stage_23_complete_log.write(Stage23TimeMessage)
+            stage_23_complete_log.write("stage 23 (minimap2 PCN estimation) finished successfully.\n")
         quit()
 
     
