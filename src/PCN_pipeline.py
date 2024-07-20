@@ -31,10 +31,18 @@ import time
 import logging
 import glob
 import pprint
+import random
 import polars as pl
 from tqdm import tqdm
 import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
+
+"""
+TODO list:
+
+2) write a function to wrap my boilerplate 'staging' functions in main() to get rid of the repetitive boilerplate code.
+
+"""
 
 
 ################################################################################
@@ -1003,9 +1011,7 @@ def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv
 
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     naive_themisto_PCN_df = naive_themisto_read_count_df.join(
-        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
-        ## I don't know why. So remove the newly made AnnotationAccession_right column.
-        longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+        longest_replicon_df, on = "AnnotationAccession", coalesce=True).with_columns(
             (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
 
     ## now write the naive PCN estimates to file.
@@ -1095,9 +1101,7 @@ def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_cs
 
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     simple_themisto_PCN_df = simple_themisto_read_count_df.join(
-        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
-        ## I don't know why. So remove the newly made AnnotationAccession_right column.
-        longest_replicon_df, on = "AnnotationAccession").select(pl.col("*").exclude("AnnotationAccession_right")).with_columns(
+        longest_replicon_df, on = "AnnotationAccession", coalesce=True).with_columns(
             (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
 
     ## now write the simple PCN estimates to file.
@@ -1401,12 +1405,9 @@ def make_PIRAGenomeDataFrame(
         ## any reads pseudoalign to it. therefore, we need to left_join my_native_themisto_PCN_df to
         ## additional_replicon_reads_df, which contains the data for ALL replicons in the genome,
         ## even if the Count is zero.
-        my_naive_themisto_PCN_df, on="SeqID", how="left").with_columns(
+        my_naive_themisto_PCN_df, on="SeqID", how="left", coalesce=True).with_columns(
             ##fill in missing values in the AnnotationAccession column after the merge.
-            pl.col("AnnotationAccession").fill_null(my_AnnotationAccession)).select(
-                ## remove duplicate columns (possibly containing missing values)
-                ## that came from my_naive_themisto_PCN_df.
-                pl.col("*").exclude("replicon_length_right", "SeqType_right")).with_columns(
+            pl.col("AnnotationAccession").fill_null(my_AnnotationAccession)).with_columns(
                     ## set missing values in the InitialReadCount column to 0.
                     pl.col("InitialReadCount").fill_null(strategy="zero")).with_columns(
                         ## sum those ReadCounts,
@@ -1429,10 +1430,7 @@ def make_PIRAGenomeDataFrame(
 
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     PIRAGenomeDataFrame = merged_readcount_df.join(
-        ## WEIRD BEHAVIOR in polars: the AnnotationAccession key for both dataframes is preserved,
-        ## I don't know why. So remove the newly made AnnotationAccession_right, SeqID_right, SeqType_right columns.
-        longest_replicon_row_df, on = "AnnotationAccession").select(
-        pl.col("*").exclude("AnnotationAccession_right", "SeqID_right", "SeqType_right")).with_columns(
+        longest_replicon_row_df, on = "AnnotationAccession", coalesce=True).with_columns(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
             ## and sort by the ThemistoID column.
             "ThemistoID")
@@ -1659,16 +1657,9 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
 
         ## and now add the columns with the naive themisto PCN estimate subset data.
         my_naive_themisto_PCN_df = my_naive_themisto_PCN_df.join(
-            my_naive_themisto_PCN_estimates_subset_df, on="SeqID", how="left").select(
-                ## remove duplicate columns that came from my_naive_themisto_PCN_esimates_subset_df.
-                pl.col("*").exclude(
-                    "ThemistoID_right",
-                    "AnnotationAccession_right",
-                    "SeqID_right",
-                    "replicon_length_right",
-                    "SeqType_right")).with_columns(
-                        ## set missing values in the InitialReadCount column to 0.
-                        pl.col("InitialReadCount").fill_null(strategy="zero"))
+            my_naive_themisto_PCN_estimates_subset_df, on="SeqID", how="left", coalesce=True).with_columns(
+                ## set missing values in the InitialReadCount column to 0.
+                pl.col("InitialReadCount").fill_null(strategy="zero"))
         
         ## make a dictionary mapping reads to Themisto replicon IDs.
         genome_dir = os.path.join(multiread_alignment_dir, genome)
@@ -1704,18 +1695,36 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     return
         
 
-################################################################################
+def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file):
 
-def pipeline_main():
-
+    ## Choose 100 genomes for the benchmarking against minimap2 PCN estimates.
+    GENOME_SAMPLE_SIZE = 100
+    
     ## ReadCount threshold for PCN estimates by pseudoalignment.
     ## This is only used for filtering the final set of PCN estimates by pseudoalignment.
     MIN_READ_COUNT = 10000 
+
+    filtered_PIRA_estimates_DataFrame = pl.read_csv(PIRA_PCN_csv_file).filter(
+        ## filter for replicons with sufficient reads for accurate PCN estimates,
+        ## and then filter for genomes in which all replicons are still present
+        pl.col("ReadCount") > MIN_READ_COUNT).group_by(
+            
+        )
     
-    run_log_file = "../results/PCN-pipeline-log.txt"
+    ## now save to disk.
+    ##random_subset_of_PIRA_estimates_DataFrame.write_csv(PIRA_low_PCN_benchmark_csv_file)
+    return
+
+################################################################################
+
+def main():
+
     ## Configure logging
+    run_log_file = "../results/PCN-pipeline-log.txt"
     logging.basicConfig(filename=run_log_file, level=logging.INFO)
-    
+
+    ## define input and output files used in the pipeline.
+
     prokaryotes_with_plasmids_file = "../results/prokaryotes-with-chromosomes-and-plasmids.txt"
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
@@ -1758,7 +1767,9 @@ def pipeline_main():
     ## this file contains PIRA estimates for the genomes that have multireads called by themisto.
     PIRA_PCN_csv_file = "../results/PIRA-PCN-estimates.csv"
 
-    ## this file contains a list 
+    ## this file contains a random subset of PIRA estimates for 100 genomes with at least one plasmid with
+    ## PCN < 1, and ReadCount > MIN_READ_COUNT.
+    PIRA_low_PCN_benchmark_csv_file = "../results/PIRA-low-PCN-benchmark-estimates.csv"
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2193,11 +2204,8 @@ def pipeline_main():
         print(f"{stage_22_complete_file} exists on disk-- skipping stage 22.")
     else:
         stage22_start_time = time.time()  ## Record the start time
-        
-        ## at random, choose 100 genomes containing a plasmid with PCN < 1
-        ## and ReadCount > MIN_READ_COUNT.
-
-        ## WORKING HERE
+        ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
+        choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
     
         quit() ## for debugging.
         stage22_end_time = time.time()  ## Record the end time
@@ -2240,5 +2248,6 @@ def pipeline_main():
     return
 
 
-pipeline_main()
+if __name__ == __main__:
+    main()
 
