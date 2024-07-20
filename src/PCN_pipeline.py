@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-PCN_pipeline.py by Maggie Wilson and Rohan Maddamsetti.
+PCN_pipeline.py by Rohan Maddamsetti and Maggie Wilson.
 
 For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $PATH.
 On the Duke Compute Cluster (DCC), run the following to get these programs into the path:
@@ -1288,6 +1288,63 @@ def make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir):
     return
 
 
+def align_reads_for_benchmark_genomes_with_minimap2(
+        PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+        themisto_replicon_ref_dir, SRA_data_dir, benchmark_alignment_dir):
+    ## Example: minimap2 -x sr ref.fa read1.fq read2.fq > aln.paf
+    ## Details of PAF format are here: https://github.com/lh3/miniasm/blob/master/PAF.md
+
+    ## make the directory for read alignments  if it does not exist.
+    if not exists(benchmark_alignment_dir):
+        os.mkdir(benchmark_alignment_dir)
+
+    ## get the AnnotationAccessions of interest for benchmarking.
+    benchmark_genomes_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
+
+    
+    ## get the unique RefSeq_IDs in this dataframe
+    AnnotationAccession_list = list(set(benchmark_genomes_df.get_column("AnnotationAccession").to_list()))
+    ## the following is a hack to split AnnotationAccession on the second occurrence of an "_" to get the RefSeq_ID.
+    AnnotationAccession_to_RefSeq_ID_dict = {x : "_".join(x.split("_", 2)[:2]) for x in AnnotationAccession_list}
+
+    ## we will get the fastq files for each genome from this DataFrame.
+    benchmark_RunID_table_df = pl.read_csv(RunID_table_csv).filter(
+        pl.col("RefSeq_ID").is_in(AnnotationAccession_to_RefSeq_ID_dict.values()))
+    
+    for my_genome in AnnotationAccession_list:
+        ## make a subdirectory for the alignments.
+        genome_alignment_dir = os.path.join(benchmark_alignment_dir, my_genome)
+
+        if not exists(genome_alignment_dir):
+            os.mkdir(genome_alignment_dir)
+
+        ref_genome_fasta_file = my_genome + ".fna"
+        reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome, ref_genome_fasta_file)
+        
+        my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[my_genome]
+        my_RunID_df = benchmark_RunID_table_df.filter(pl.col("RefSeq_ID") == my_RefSeq_ID)
+        my_RunID_list = my_RunID_df.get_column("Run_ID").to_list()
+
+        ## Now use this list of Run IDs to pattern match for *.fastq files for this genome.
+        my_read_data_pathlist = list()
+
+        for Run_ID in my_RunID_list:
+            SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
+            matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
+            my_read_data_pathlist += matched_fastq_list
+        my_read_data_pathlist.sort() ## sort the read data paths for this genome.
+
+        ## run single-end read alignment on each fastq file separately.
+        for my_index, cur_read_data_path in enumerate(my_read_data_pathlist):
+            my_alignment_file = basename(cur_read_data_path).split(".fastq")[0] + ".paf"
+            my_alignment_outpath = os.path.join(genome_alignment_dir, my_alignment_file)
+
+            minimap2_cmd_string = " ".join(["minimap2 -x sr", reference_genome_path, cur_read_data_path, ">", my_alignment_outpath])
+            print(minimap2_cmd_string)
+            subprocess.run(minimap2_cmd_string, shell=True)
+    return
+
+
 def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir):
     ## Example: minimap2 -x sr ref.fa read1.fq read2.fq > aln.paf
     ## Details of PAF format are here: https://github.com/lh3/miniasm/blob/master/PAF.md
@@ -1808,6 +1865,10 @@ def main():
     ## this file contains a random subset of PIRA estimates for 100 genomes with at least one plasmid with
     ## PCN < 1, and ReadCount > MIN_READ_COUNT.
     PIRA_low_PCN_benchmark_csv_file = "../results/PIRA-low-PCN-benchmark-estimates.csv"
+
+    ## directory for read alignments constructed with minimap2 for PCN estimate benchmarking.
+    benchmark_alignment_dir = "../results/PIRA_benchmark_alignments/"
+
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2263,22 +2324,41 @@ def main():
         print(f"{stage_23_complete_file} exists on disk-- skipping stage 23.")
     else:
         stage23_start_time = time.time()  ## Record the start time
-        
-        ## CODE GOES HERE
-
-    
-        quit() ## for debugging.
+        align_reads_for_benchmark_genomes_with_minimap2(
+            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
+            SRA_data_dir, benchmark_alignment_dir)
         stage23_end_time = time.time()  ## Record the end time
         stage23_execution_time = stage23_end_time - stage23_start_time
-        Stage23TimeMessage = f"Stage 23 (minimap2 PCN estimation) execution time: {stage23_execution_time} seconds\n"
+        Stage23TimeMessage = f"Stage 23 (minimap2 full alignment) execution time: {stage23_execution_time} seconds\n"
         print(Stage23TimeMessage)
         logging.info(Stage23TimeMessage)
         with open(stage_23_complete_file, "w") as stage_23_complete_log:
             stage_23_complete_log.write(Stage23TimeMessage)
-            stage_23_complete_log.write("stage 23 (minimap2 PCN estimation) finished successfully.\n")
+            stage_23_complete_log.write("stage 23 (minimap2 full alignment) finished successfully.\n")
         quit()
 
-    
+    #####################################################################################
+    ## Stage 24: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
+
+    stage_24_complete_file = "../results/stage24.done"
+    if exists(stage_24_complete_file):
+        print(f"{stage_24_complete_file} exists on disk-- skipping stage 24.")
+    else:
+        stage24_start_time = time.time()  ## Record the start time
+
+        ## CODE GOES HERE
+        quit() ## for debugging.
+        
+
+        stage24_end_time = time.time()  ## Record the end time
+        stage24_execution_time = stage24_end_time - stage24_start_time
+        Stage23TimeMessage = f"Stage 24 (minimap2 results parsing) execution time: {stage24_execution_time} seconds\n"
+        print(Stage24TimeMessage)
+        logging.info(Stage24TimeMessage)
+        with open(stage_24_complete_file, "w") as stage_24_complete_log:
+            stage_24_complete_log.write(Stage24TimeMessage)
+            stage_24_complete_log.write("stage 24 (minimap2 results parsing) finished successfully.\n")
+        quit()
 
         
     return
