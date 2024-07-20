@@ -39,6 +39,18 @@ import numpy as np ## for matrix multiplications for running PIRA.
 
 """
 TODO list:
+1) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
+Example:
+
+filtered_df = (
+    df.groupby("AnnotationAccession")
+      .agg([
+          (pl.col("SufficientReadCount").all()).alias("AllTrue")
+      ])
+      .filter(pl.col("AllTrue"))
+      .join(df, on="AnnotationAccession", how="inner")
+      .drop("AllTrue")
+)
 
 2) write a function to wrap my boilerplate 'staging' functions in main() to get rid of the repetitive boilerplate code.
 
@@ -1704,15 +1716,41 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
     ## This is only used for filtering the final set of PCN estimates by pseudoalignment.
     MIN_READ_COUNT = 10000 
 
-    filtered_PIRA_estimates_DataFrame = pl.read_csv(PIRA_PCN_csv_file).filter(
-        ## filter for replicons with sufficient reads for accurate PCN estimates,
-        ## and then filter for genomes in which all replicons are still present
-        pl.col("ReadCount") > MIN_READ_COUNT).group_by(
-            
-        )
+    PCN_THRESHOLD = 0.8 ## threshold to define low PCN < 1 (to avoid selecting plasmids with PCN = 0.98).
+
+    ## get the PIRA estimates from disk. 
+    all_PIRA_estimates_DataFrame = pl.read_csv(PIRA_PCN_csv_file)
+
+    # Get genomes where all replicons have ReadCount > MIN_READ_COUNT,
+    filtered_PIRA_estimates_DataFrame = (
+        all_PIRA_estimates_DataFrame
+        .with_columns(
+            (pl.col("ReadCount") > MIN_READ_COUNT).alias("SufficientReadCount"))
+        .group_by("AnnotationAccession")
+        .agg([
+            (pl.col("SufficientReadCount").all()).alias("All_Replicons_Have_SufficientReadCount")
+        ])
+        .filter(pl.col("All_Replicons_Have_SufficientReadCount"))
+        .join(all_PIRA_estimates_DataFrame, on="AnnotationAccession", how="inner")
+    ).filter(
+        ## then filter for replicons with estimated PCN < PCN_THRESHOLD.
+        pl.col("PIRA_CopyNumberEstimate") < PCN_THRESHOLD)
+
+    ## get the unique annotation accessions in this dataframe
+    annotation_accession_list = list(set(filtered_PIRA_estimates_DataFrame.get_column("AnnotationAccession").to_list()))
+    ## shuffle the list
+    random.shuffle(annotation_accession_list)
+    ## make sure the sample size is less than the length of the list
+    assert GENOME_SAMPLE_SIZE < len(annotation_accession_list)
+    ## and pick the first GENOME_SAMPLE_SIZE annotation accessions in the shuffled list.
+    selected_annotation_accessions = annotation_accession_list[0:GENOME_SAMPLE_SIZE]
+
+    ## now subset the original dataframe based on these annotation accessions.
+    random_subset_of_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.filter(
+        pl.col("AnnotationAccession").is_in(selected_annotation_accessions))
     
     ## now save to disk.
-    ##random_subset_of_PIRA_estimates_DataFrame.write_csv(PIRA_low_PCN_benchmark_csv_file)
+    random_subset_of_PIRA_estimates_DataFrame.write_csv(PIRA_low_PCN_benchmark_csv_file)
     return
 
 ################################################################################
@@ -2206,8 +2244,6 @@ def main():
         stage22_start_time = time.time()  ## Record the start time
         ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
         choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
-    
-        quit() ## for debugging.
         stage22_end_time = time.time()  ## Record the end time
         stage22_execution_time = stage22_end_time - stage22_start_time
         Stage22TimeMessage = f"Stage 22 (choosing 100 random genomes with PCN < 1) execution time: {stage22_execution_time} seconds\n"
@@ -2248,6 +2284,6 @@ def main():
     return
 
 
-if __name__ == __main__:
+if __name__ == "__main__":
     main()
 
