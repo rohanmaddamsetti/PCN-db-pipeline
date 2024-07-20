@@ -54,6 +54,9 @@ filtered_df = (
 
 2) write a function to wrap my boilerplate 'staging' functions in main() to get rid of the repetitive boilerplate code.
 
+3) clean up code to be consistent throughout in the use of
+AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as directory names.
+
 """
 
 
@@ -1311,17 +1314,23 @@ def align_reads_for_benchmark_genomes_with_minimap2(
     benchmark_RunID_table_df = pl.read_csv(RunID_table_csv).filter(
         pl.col("RefSeq_ID").is_in(AnnotationAccession_to_RefSeq_ID_dict.values()))
     
-    for my_genome in AnnotationAccession_list:
-        ## make a subdirectory for the alignments.
-        genome_alignment_dir = os.path.join(benchmark_alignment_dir, my_genome)
+    for annotation_accession in AnnotationAccession_list:
+
+        ## IMPORTANT: this is a hack to get the right paths and filenames.
+        ## IMPORTANT TODO: clean up code to make path names consistent throughout, so that I don't have to do these
+        ## silly hacks.
+        my_genome_basename = annotation_accession + "_genomic"
+        
+        ## make a subdirectory for the output alignments.
+        genome_alignment_dir = os.path.join(benchmark_alignment_dir, my_genome_basename)
 
         if not exists(genome_alignment_dir):
             os.mkdir(genome_alignment_dir)
 
-        ref_genome_fasta_file = my_genome + ".fna"
-        reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome, ref_genome_fasta_file)
+        ref_genome_fasta_file = my_genome_basename + ".fna"
+        reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome_basename, ref_genome_fasta_file)
         
-        my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[my_genome]
+        my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[annotation_accession]
         my_RunID_df = benchmark_RunID_table_df.filter(pl.col("RefSeq_ID") == my_RefSeq_ID)
         my_RunID_list = my_RunID_df.get_column("Run_ID").to_list()
 
