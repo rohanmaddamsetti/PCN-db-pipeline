@@ -1387,12 +1387,12 @@ def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir
     return
 
 
-def parse_multiread_alignments(genome_dir):
+def parse_read_alignments(genome_dir):
     ## make a dictionary from reads to the multiset of replicons that the read maps to.
     paf_alignment_files = [x for x in os.listdir(genome_dir) if x.endswith(".paf")]
     paf_alignment_paths = [os.path.join(genome_dir, x) for x in paf_alignment_files]
     
-    multiread_mapping_dict = dict()
+    read_mapping_dict = dict()
     for paf_path in paf_alignment_paths:
         with open(paf_path, "r") as paf_fh:
             for line in paf_fh:
@@ -1403,11 +1403,11 @@ def parse_multiread_alignments(genome_dir):
                 read_name = fields[0]
                 themisto_replicon_ID = int(fields[5].split("|")[0].split("=")[-1]) ## IMPORTANT: turn into an integer
                 
-                if read_name in multiread_mapping_dict:
-                    multiread_mapping_dict[read_name].append(themisto_replicon_ID)
+                if read_name in read_mapping_dict:
+                    read_mapping_dict[read_name].append(themisto_replicon_ID)
                 else:
-                    multiread_mapping_dict[read_name] = [themisto_replicon_ID]
-    return multiread_mapping_dict
+                    read_mapping_dict[read_name] = [themisto_replicon_ID]
+    return read_mapping_dict
 
 
 def initialize_GenomeDataFrame(themisto_ID_to_seq_metadata_dict):
@@ -1741,7 +1741,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         
         ## make a dictionary mapping reads to Themisto replicon IDs.
         genome_dir = os.path.join(multiread_alignment_dir, genome)
-        multiread_mapping_dict = parse_multiread_alignments(genome_dir)
+        multiread_mapping_dict = parse_read_alignments(genome_dir)
         
         ## initialize the data structures for PIRA.
         MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
@@ -1818,6 +1818,48 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
     ## now save to disk.
     random_subset_of_PIRA_estimates_DataFrame.write_csv(PIRA_low_PCN_benchmark_csv_file)
     return
+
+
+def benchmark_PCN_estimates_with_minimap2_alignments(
+        PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir, themisto_replicon_ref_dir):
+
+    ## import PIRA PCN estimates for the benchmarking genomes.
+    PIRA_low_PCN_estimate_benchmark_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
+
+    ## get the annotation accessions for the benchmark genomes.
+    benchmark_genome_IDs = PIRA_low_PCN_estimate_benchmark_df.get_column("AnnotationAccession").to_list())
+
+    ## iterate over the benchmark genomes
+    for my_genome_ID in benchmark_genomes_ID:
+
+        ## add the "_genomic" suffix needed for the directory containing the alignments
+        my_genome_dirname = my_genome_ID = "_genomic"
+        my_genome_dir = os.path.join(benchmark_alignment_dir, my_genome_dirname)
+
+        ## make the dictionary mapping reads to the multiset of themisto replicon IDs.
+        read_mapping_dict = parse_read_alignments(my_genome_dir)
+
+        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(
+            themisto_replicon_ref_dir, my_genome_dirname)
+
+        ## get the metadata for this genome from its PIRA estimates using themisto.
+        my_PIRA_PCN_estimates_subset_df = (
+            PIRA_low_PCN_estimate_benchmark_df
+            .filter(
+                pl.col("AnnotationAccession") == my_genome_ID)
+        )
+           
+        ## we need to run PIRA using ONLY the minimap2 alignment results.
+        ## to do so, we need to pass in a data structure with some sensible default values
+        ## by deleting/resetting values in my_PIRA_PCN_estimates_subset_df
+
+        print(my_PIRA_PCN_estimates_subset_df)
+        
+        quit() ## FOR DEBUGGING
+        
+        
+    return
+
 
 ################################################################################
 
@@ -2355,7 +2397,8 @@ def main():
     else:
         stage24_start_time = time.time()  ## Record the start time
 
-        ## CODE GOES HERE
+        benchmark_PCN_estimates_with_minimap2_alignments(
+            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir, themisto_replicon_ref_dir)
         quit() ## for debugging.
         
 
