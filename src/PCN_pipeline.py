@@ -1830,7 +1830,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     benchmark_genome_IDs = PIRA_low_PCN_estimate_benchmark_df.get_column("AnnotationAccession").to_list()
 
     ## iterate over the benchmark genomes
-    for my_genome_ID in benchmark_genome_ID:
+    for my_genome_ID in benchmark_genome_IDs:
 
         ## add the "_genomic" suffix needed for the directory containing the alignments
         my_genome_dirname = my_genome_ID = "_genomic"
