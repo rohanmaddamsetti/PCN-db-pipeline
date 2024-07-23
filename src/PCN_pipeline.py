@@ -1903,6 +1903,10 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     return
 
 
+def make_dir_of_unzipped_benchmark_reference_genomes_for_breseq():
+    pass
+
+
 def benchmark_low_PCN_genomes_with_breseq(
         PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
         reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir):
@@ -1930,8 +1934,15 @@ def benchmark_low_PCN_genomes_with_breseq(
         if not exists(my_breseq_outdir):
             os.mkdir(my_breseq_outdir)
 
+        ## IMPORTANT: breseq needs an unzipped version of this file. let's keep the original though (use -c option).
         ref_genome_gbk_gz_file = annotation_accession + "_genomic.gbff.gz"
-        reference_genome_path = os.path.join(reference_genome_dir, ref_genome_gbk_gz_file)
+        gz_reference_genome_path = os.path.join(reference_genome_dir, ref_genome_gbk_gz_file)
+        
+        ref_genome_gbk_file = annotation_accession + "_genomic.gbff"
+        reference_genome_path = os.path.join(reference_genome_dir, ref_genome_gbk_file)
+
+        gunzip_optionc_string = f"gunzip -c {gz_reference_genome_path} > {reference_genome_path}"
+        subprocess.run(gunzip_optionc_string, shell=True)
         
         my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[annotation_accession]
         my_RunID_df = benchmark_RunID_table_df.filter(pl.col("RefSeq_ID") == my_RefSeq_ID)
