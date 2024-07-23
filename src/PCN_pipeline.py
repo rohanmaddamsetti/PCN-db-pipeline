@@ -1881,7 +1881,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
         ## First convert the NumPy array to a Polars Series
         PIRA_PCN_estimate_series = pl.Series("minimap2_PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
         ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
-        my_PIRA_PCN_estimate_DataFrame = my_PCN_data_df.with_columns([PIRA_PCN_estimate_series])
+        my_PIRA_PCN_estimate_DataFrame = PIRAGenomeDataFrame.with_columns([PIRA_PCN_estimate_series])
 
         ## now concatenate the DataFrame for this genome to the big DataFrame for all genomes.
         all_PIRA_estimates_DataFrame = pl.concat(
@@ -2377,13 +2377,8 @@ def main():
     #####################################################################################
     ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2.
     #####################################################################################
-    ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for subsets
-    ## of genomes using minimap2.
-
-    ## TODO:
-    ## 1) write code to estimate PCN in a genome with minimap2.
-    ## 2) apply to a set of 100 random genomes that contain plasmids with PCN < 1.
-    ## This is to check whether the PCN < 1 results are an artifact, or are consistent with alignment-based approaches.
+    ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
+    ## that apparently contain low PCN plasmids (PCN < 0.8), using minimap2.
     
     #####################################################################################
     ## Stage 22: choose a set of 100 random genomes that contain plasmids with PCN < 1
