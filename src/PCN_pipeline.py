@@ -1903,10 +1903,6 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     return
 
 
-def make_dir_of_unzipped_benchmark_reference_genomes_for_breseq():
-    pass
-
-
 def benchmark_low_PCN_genomes_with_breseq(
         PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
         reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir):
@@ -1963,6 +1959,41 @@ def benchmark_low_PCN_genomes_with_breseq(
         sbatch_string = "sbatch -p scavenger -t 2:30:00 --mem=8G --wrap=\"" + breseq_string + "\""
         print(sbatch_string)
         subprocess.run(sbatch_string, shell=True)
+    return
+
+
+def parse_breseq_results(breseq_outdir, results_csv_path):
+    with open(results_csv_path, "w") as csv_fh:
+        ## print a header string.
+        print("AnnotationAccession,SeqID,mean_coverage", file=csv_fh)
+        ## filter on IDs starting with "GCF_"
+        for genome_accession in [x for x in os.listdir(breseq_outdir) if x.startswith("GCF_")]:
+            breseq_summary_path = os.path.join(breseq_outdir, genome_accession, "output", "summary.html")
+            ## Read the HTML file if it exists.
+            if not os.path.exists(breseq_summary_path): continue
+            with open(breseq_summary_path, 'r') as summary_fh:
+                html_content = summary_fh.read()
+
+            ## Create a BeautifulSoup object
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            ## Find the table by its section heading
+            table_section = soup.find('h2', string='Reference Sequence Information')
+            reference_table = table_section.find_next('table')
+
+            ## Extract the table data
+            table_data = []
+            for row in reference_table.find_all('tr'):
+                row_data = [cell.get_text(strip=True) for cell in row.find_all('td')]
+                if row_data and row_data[0] == "coverage":
+                    table_data.append(row_data)
+
+            ## Print the extracted table data
+            for i, row in enumerate(table_data):
+                SeqID = row[2]
+                mean_coverage = row[4]
+                csv_string = ",".join([genome_accession, SeqID, mean_coverage])
+                print(csv_string, file=csv_fh)
     return
 
 
@@ -2545,7 +2576,7 @@ def main():
     else:
         stage26_start_time = time.time()  ## Record the start time
 
-        ## breseq parsing function calls go here
+        parse_breseq_results(breseq_outdir, results_csv_path) ## WORKING HERE!
         quit() ## FOR DEBUGGING
         
         stage26_end_time = time.time()  ## Record the end time
