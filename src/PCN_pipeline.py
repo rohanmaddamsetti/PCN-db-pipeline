@@ -2436,7 +2436,7 @@ def main():
             themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
         stage24_end_time = time.time()  ## Record the end time
         stage24_execution_time = stage24_end_time - stage24_start_time
-        Stage23TimeMessage = f"Stage 24 (minimap2 results parsing) execution time: {stage24_execution_time} seconds\n"
+        Stage24TimeMessage = f"Stage 24 (minimap2 results parsing) execution time: {stage24_execution_time} seconds\n"
         print(Stage24TimeMessage)
         logging.info(Stage24TimeMessage)
         with open(stage_24_complete_file, "w") as stage_24_complete_log:
