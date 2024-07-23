@@ -3,7 +3,7 @@
 """
 PCN_pipeline.py by Rohan Maddamsetti and Maggie Wilson.
 
-For this pipeline to work, ncbi datasets, pysradb, and kallisto must be in the $PATH.
+For this pipeline to work, ncbi datasets, pysradb, kallisto, themisto, minimap2, and breseq must be in the $PATH.
 On the Duke Compute Cluster (DCC), run the following to get these programs into the path:
 conda activate PCNdb-env
 
@@ -2448,6 +2448,50 @@ def main():
             stage_24_complete_log.write("stage 24 (minimap2 results parsing) finished successfully.\n")
         quit()
 
+
+    #####################################################################################
+    ## Stage 25: run breseq on the set of 100 genomes chosen for benchmarking.
+
+    stage_25_complete_file = "../results/stage25.done"
+    if exists(stage_25_complete_file):
+        print(f"{stage_25_complete_file} exists on disk-- skipping stage 25.")
+    else:
+        stage25_start_time = time.time()  ## Record the start time
+
+        ## breseq calls go here
+        quit() ## FOR DEBUGGING
+        
+        stage25_end_time = time.time()  ## Record the end time
+        stage25_execution_time = stage25_end_time - stage25_start_time
+        Stage25TimeMessage = f"Stage 25 (running breseq) execution time: {stage25_execution_time} seconds\n"
+        print(Stage25TimeMessage)
+        logging.info(Stage25TimeMessage)
+        with open(stage_25_complete_file, "w") as stage_25_complete_log:
+            stage_25_complete_log.write(Stage25TimeMessage)
+            stage_25_complete_log.write("stage 25 (running breseq) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Stage 26: parse breseq results on the set of 100 genomes chosen for benchmarking.
+
+    stage_26_complete_file = "../results/stage26.done"
+    if exists(stage_26_complete_file):
+        print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
+    else:
+        stage26_start_time = time.time()  ## Record the start time
+
+        ## breseq parsing function calls go here
+        quit() ## FOR DEBUGGING
+        
+        stage26_end_time = time.time()  ## Record the end time
+        stage26_execution_time = stage26_end_time - stage26_start_time
+        Stage26TimeMessage = f"Stage 26 (breseq results parsing) execution time: {stage26_execution_time} seconds\n"
+        print(Stage26TimeMessage)
+        logging.info(Stage26TimeMessage)
+        with open(stage_26_complete_file, "w") as stage_26_complete_log:
+            stage_26_complete_log.write(Stage26TimeMessage)
+            stage_26_complete_log.write("stage 26 (breseq results parsing) finished successfully.\n")
+        quit()
         
     return
 
