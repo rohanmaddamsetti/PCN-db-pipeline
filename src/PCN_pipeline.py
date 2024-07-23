@@ -1881,7 +1881,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
         ## First convert the NumPy array to a Polars Series
         PIRA_PCN_estimate_series = pl.Series("minimap2_PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
         ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
-        my_PIRA_PCN_estimate_DataFrame = PIRA_estimates_DataFrame.with_columns([PIRA_PCN_estimate_series])
+        my_PIRA_PCN_estimate_DataFrame = all_PIRA_estimates_DataFrame.with_columns([PIRA_PCN_estimate_series])
 
         ## now concatenate the DataFrame for this genome to the big DataFrame for all genomes.
         all_PIRA_estimates_DataFrame = pl.concat(
