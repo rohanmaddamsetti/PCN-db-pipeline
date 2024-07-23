@@ -1903,6 +1903,59 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     return
 
 
+def benchmark_low_PCN_genomes_with_breseq(
+        PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+        reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir):
+
+    ## make the directory for breseq results  if it does not exist.
+    if not exists(breseq_benchmark_results_dir):
+        os.mkdir(breseq_benchmark_results_dir)
+
+    ## get the AnnotationAccessions of interest for benchmarking.
+    benchmark_genomes_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
+
+    ## get the unique RefSeq_IDs in this dataframe
+    AnnotationAccession_list = list(set(benchmark_genomes_df.get_column("AnnotationAccession").to_list()))
+    ## the following is a hack to split AnnotationAccession on the second occurrence of an "_" to get the RefSeq_ID.
+    AnnotationAccession_to_RefSeq_ID_dict = {x : "_".join(x.split("_", 2)[:2]) for x in AnnotationAccession_list}
+
+    ## we will get the fastq files for each genome from this DataFrame.
+    benchmark_RunID_table_df = pl.read_csv(RunID_table_csv).filter(
+        pl.col("RefSeq_ID").is_in(AnnotationAccession_to_RefSeq_ID_dict.values()))
+    
+    for annotation_accession in AnnotationAccession_list:
+        
+        ## make a subdirectory for the breseq output.
+        my_breseq_outdir = os.path.join(breseq_benchmark_results_dir, annotation_accession)
+        if not exists(my_breseq_outdir):
+            os.mkdir(my_breseq_outdir)
+
+        ref_genome_gbk_gz_file = annotation_accession + "_genomic.gbff.gz"
+        reference_genome_path = os.path.join(reference_genome_dir, ref_genome_gbk_gz_file)
+        
+        my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[annotation_accession]
+        my_RunID_df = benchmark_RunID_table_df.filter(pl.col("RefSeq_ID") == my_RefSeq_ID)
+        my_RunID_list = my_RunID_df.get_column("Run_ID").to_list()
+
+        ## Now use this list of Run IDs to pattern match for *.fastq files for this genome.
+        my_read_data_pathlist = list()
+
+        for Run_ID in my_RunID_list:
+            SRA_file_pattern = f"{SRA_data_dir}/{Run_ID}*.fastq"
+            matched_fastq_list = sorted(glob.glob(SRA_file_pattern))
+            my_read_data_pathlist += matched_fastq_list
+        my_read_data_pathlist.sort() ## sort the read data paths for this genome.
+
+        ## now run breseq on this genome.
+        breseq_args = ["breseq", "-o", my_breseq_outdir, "-r", reference_genome_path] + my_read_data_pathlist
+        breseq_string = " ".join(breseq_args)
+        sbatch_string = "sbatch -p scavenger -t 2:30:00 --mem=8G --wrap=\"" + breseq_string + "\""
+        print(sbatch_string)
+        subprocess.run(breseq_string, shell=True)
+    return
+
+
+
 ################################################################################
 
 def main():
@@ -1964,6 +2017,8 @@ def main():
 
     minimap2_benchmark_PIRA_PCN_csv_file = "../results/minimap2-PIRA-low-PCN-benchmark-estimates"
 
+    ## directory for breseq results for PCN estimate benchmarking.
+    breseq_benchmark_results_dir = "../results/breseq_benchmark_results/"
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2457,8 +2512,11 @@ def main():
         print(f"{stage_25_complete_file} exists on disk-- skipping stage 25.")
     else:
         stage25_start_time = time.time()  ## Record the start time
+        benchmark_low_PCN_genomes_with_breseq(
+            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)
 
-        ## breseq calls go here
+
         quit() ## FOR DEBUGGING
         
         stage25_end_time = time.time()  ## Record the end time
