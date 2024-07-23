@@ -1962,7 +1962,7 @@ def benchmark_low_PCN_genomes_with_breseq(
         breseq_string = " ".join(breseq_args)
         sbatch_string = "sbatch -p scavenger -t 2:30:00 --mem=8G --wrap=\"" + breseq_string + "\""
         print(sbatch_string)
-        subprocess.run(breseq_string, shell=True)
+        subprocess.run(sbatch_string, shell=True)
     return
 
 
