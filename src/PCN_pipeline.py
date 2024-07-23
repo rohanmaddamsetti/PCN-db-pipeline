@@ -1890,9 +1890,10 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
 
     ## arrange the columns of all_PIRA_estimates_DataFrame in a nice fashion.
     all_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.select(
-        pl.col("AnnotationAccession", "SeqID", "SeqType",
-               "ThemistoID", "replicon_length", "InitialReadCount", "AdditionalReadCount", "ReadCount",
-               "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate", "minimap2_PIRA_CopyNumberEstimate"))
+        pl.col(
+            "AnnotationAccession", "SeqID", "SeqType",
+            "ThemistoID", "replicon_length", "ReadCount", "SequencingCoverage",
+            "LongestRepliconCoverage", "InitialCopyNumberEstimate", "minimap2_PIRA_CopyNumberEstimate"))
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.write_csv(minimap2_benchmark_PIRA_PCN_csv_file)
     return
