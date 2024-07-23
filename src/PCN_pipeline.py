@@ -1859,7 +1859,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
 
         ## we need to run PIRA using ONLY the minimap2 alignment results.
         ## to do so, we need to pass in a data structure with some sensible default values.
-        my_initial_PCN_data_df = (
+        my_PCN_data_df = (
             PIRA_low_PCN_estimate_benchmark_df
             .filter(pl.col("AnnotationAccession") == my_genome_ID)
             ## only keep the metadata for this genome
@@ -1870,7 +1870,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     
         ## now initialize the data structures for PIRA.
         MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
-            read_mapping_dict, themisto_ID_to_seq_metadata_dict, my_initial_PCN_data_df)
+            read_mapping_dict, themisto_ID_to_seq_metadata_dict, my_PCN_data_df)
 
         ## now run PIRA for this genome.
         PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
@@ -1881,7 +1881,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
         ## First convert the NumPy array to a Polars Series
         PIRA_PCN_estimate_series = pl.Series("minimap2_PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
         ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
-        my_PIRA_PCN_estimate_DataFrame = all_PIRA_estimates_DataFrame.with_columns([PIRA_PCN_estimate_series])
+        my_PIRA_PCN_estimate_DataFrame = my_PCN_data_df.with_columns([PIRA_PCN_estimate_series])
 
         ## now concatenate the DataFrame for this genome to the big DataFrame for all genomes.
         all_PIRA_estimates_DataFrame = pl.concat(
