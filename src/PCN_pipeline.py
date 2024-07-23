@@ -39,6 +39,10 @@ import numpy as np ## for matrix multiplications for running PIRA.
 
 """
 TODO list:
+
+CRITICAL TODO: repeat the low-PCN benchmarking with breseq to see why the sequencing coverage
+is so low, and whether this has any important effects on PCN estimation.
+
 1) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
 Example:
 
