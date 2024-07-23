@@ -1826,34 +1826,48 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     ## import PIRA PCN estimates for the benchmarking genomes.
     PIRA_low_PCN_estimate_benchmark_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
 
-    ## get the annotation accessions for the benchmark genomes.
-    benchmark_genome_IDs = PIRA_low_PCN_estimate_benchmark_df.get_column("AnnotationAccession").to_list()
-
+    ## get the unique annotation accessions for the benchmark genomes.
+    benchmark_genome_IDs = list(set(PIRA_low_PCN_estimate_benchmark_df.get_column("AnnotationAccession").to_list()))
+    
     ## iterate over the benchmark genomes
     for my_genome_ID in benchmark_genome_IDs:
 
         ## add the "_genomic" suffix needed for the directory containing the alignments
-        my_genome_dirname = my_genome_ID = "_genomic"
-        my_genome_dir = os.path.join(benchmark_alignment_dir, my_genome_dirname)
+        my_genome_dirname = my_genome_ID + "_genomic"
+        ## IMPORTANT TODO: update the pipeline so that I don't have to do this kind of nonsense--
+        ## simplest solution is just to use the AnnotationAccession without the "_genomic" suffix throughout the code.
 
+        my_genome_dir = os.path.join(benchmark_alignment_dir, my_genome_dirname)
+        assert os.path.isdir(my_genome_dir) ## make sure this directory exists.
+        
         ## make the dictionary mapping reads to the multiset of themisto replicon IDs.
         read_mapping_dict = parse_read_alignments(my_genome_dir)
 
         themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(
             themisto_replicon_ref_dir, my_genome_dirname)
 
-        ## get the metadata for this genome from its PIRA estimates using themisto.
-        my_PIRA_PCN_estimates_subset_df = (
-            PIRA_low_PCN_estimate_benchmark_df
-            .filter(
-                pl.col("AnnotationAccession") == my_genome_ID)
-        )
-           
         ## we need to run PIRA using ONLY the minimap2 alignment results.
-        ## to do so, we need to pass in a data structure with some sensible default values
-        ## by deleting/resetting values in my_PIRA_PCN_estimates_subset_df
+        ## to do so, we need to pass in a data structure with some sensible default values.
+        my_initial_PCN_data_df = (
+            PIRA_low_PCN_estimate_benchmark_df
+            .filter(pl.col("AnnotationAccession") == my_genome_ID)
+            ## only keep the metadata for this genome
+            .select(pl.col("AnnotationAccession", "SeqID", "SeqType", "ThemistoID", "replicon_length"))
+            ## and recreate the InitialReadCount column, set to zero.
+            .with_columns(pl.lit(0).alias("InitialReadCount"))
+        )
+    
+        ## now initialize the data structures for PIRA.
+        MatchMatrix, PIRAGenomeDataFrame = initializePIRA(
+            read_mapping_dict, themisto_ID_to_seq_metadata_dict, my_initial_PCN_data_df)
 
-        print(my_PIRA_PCN_estimates_subset_df)
+        ## now run PIRA for this genome.
+        PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
+        print(f"PIRA PCN estimate vector for genome {my_genome_ID} is: {PIRA_PCN_estimate_vector}")
+        print("*****************************************************************************************")
+
+        ## CRITICAL TODO: refactor code as needed for here and in the function
+        ## run_PIRA_on_all_genomes() as needed to reuse code and avoid duplication.
         
         quit() ## FOR DEBUGGING
         
