@@ -2514,11 +2514,7 @@ def main():
         stage25_start_time = time.time()  ## Record the start time
         benchmark_low_PCN_genomes_with_breseq(
             PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
-            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)
-
-
-        quit() ## FOR DEBUGGING
-        
+            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
         stage25_end_time = time.time()  ## Record the end time
         stage25_execution_time = stage25_end_time - stage25_start_time
         Stage25TimeMessage = f"Stage 25 (running breseq) execution time: {stage25_execution_time} seconds\n"
