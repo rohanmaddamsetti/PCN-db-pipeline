@@ -57,6 +57,10 @@ filtered_df = (
 3) clean up code to be consistent throughout in the use of
 AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as directory names.
 
+4) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
+and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
+
+
 """
 
 
@@ -1821,15 +1825,22 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
 
 
 def benchmark_PCN_estimates_with_minimap2_alignments(
-        PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir, themisto_replicon_ref_dir):
+        PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
+        themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file):
+    ## IMPORTANT TODO: refactor code as needed for here and in the function
+    ## run_PIRA_on_all_genomes() as needed to reuse code and avoid duplication.
 
+    
     ## import PIRA PCN estimates for the benchmarking genomes.
     PIRA_low_PCN_estimate_benchmark_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
 
     ## get the unique annotation accessions for the benchmark genomes.
     benchmark_genome_IDs = list(set(PIRA_low_PCN_estimate_benchmark_df.get_column("AnnotationAccession").to_list()))
+
+    ## Make an empty Polars DataFrame to contain all the results.
+    all_PIRA_estimates_DataFrame = pl.DataFrame()
     
-    ## iterate over the benchmark genomes
+    ## iterate over the benchmark genomes to populate all_PIRA_estimates_DataFrame.
     for my_genome_ID in benchmark_genome_IDs:
 
         ## add the "_genomic" suffix needed for the directory containing the alignments
@@ -1866,12 +1877,24 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
         print(f"PIRA PCN estimate vector for genome {my_genome_ID} is: {PIRA_PCN_estimate_vector}")
         print("*****************************************************************************************")
 
-        ## CRITICAL TODO: refactor code as needed for here and in the function
-        ## run_PIRA_on_all_genomes() as needed to reuse code and avoid duplication.
-        
-        quit() ## FOR DEBUGGING
-        
-        
+        ## now add the PIRA estimates as a column to the PIRA_estimates_DataFrame.
+        ## First convert the NumPy array to a Polars Series
+        PIRA_PCN_estimate_series = pl.Series("minimap2_PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
+        ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
+        my_PIRA_PCN_estimate_DataFrame = PIRA_estimates_DataFrame.with_columns([PIRA_PCN_estimate_series])
+
+        ## now concatenate the DataFrame for this genome to the big DataFrame for all genomes.
+        all_PIRA_estimates_DataFrame = pl.concat(
+            [all_PIRA_estimates_DataFrame,
+             my_PIRA_PCN_estimate_DataFrame])
+
+    ## arrange the columns of all_PIRA_estimates_DataFrame in a nice fashion.
+    all_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.select(
+        pl.col("AnnotationAccession", "SeqID", "SeqType",
+               "ThemistoID", "replicon_length", "InitialReadCount", "AdditionalReadCount", "ReadCount",
+               "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate", "minimap2_PIRA_CopyNumberEstimate"))
+    ## now save all_PIRA_estimates_DataFrame to disk.
+    all_PIRA_estimates_DataFrame.write_csv(minimap2_benchmark_PIRA_PCN_csv_file)
     return
 
 
@@ -1933,6 +1956,8 @@ def main():
 
     ## directory for read alignments constructed with minimap2 for PCN estimate benchmarking.
     benchmark_alignment_dir = "../results/PIRA_benchmark_alignments/"
+
+    minimap2_benchmark_PIRA_PCN_csv_file = "../results/minimap2-PIRA-low-PCN-benchmark-estimates"
 
     
     #####################################################################################
@@ -2412,7 +2437,8 @@ def main():
         stage24_start_time = time.time()  ## Record the start time
 
         benchmark_PCN_estimates_with_minimap2_alignments(
-            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir, themisto_replicon_ref_dir)
+            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
+            themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
         quit() ## for debugging.
         
 
