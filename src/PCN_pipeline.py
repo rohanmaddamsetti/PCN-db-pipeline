@@ -2435,13 +2435,9 @@ def main():
         print(f"{stage_24_complete_file} exists on disk-- skipping stage 24.")
     else:
         stage24_start_time = time.time()  ## Record the start time
-
         benchmark_PCN_estimates_with_minimap2_alignments(
             PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
             themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
-        quit() ## for debugging.
-        
-
         stage24_end_time = time.time()  ## Record the end time
         stage24_execution_time = stage24_end_time - stage24_start_time
         Stage23TimeMessage = f"Stage 24 (minimap2 results parsing) execution time: {stage24_execution_time} seconds\n"
