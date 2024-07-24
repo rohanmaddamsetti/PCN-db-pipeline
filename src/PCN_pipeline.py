@@ -65,7 +65,6 @@ AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as direct
 4) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
 and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
 
-
 """
 
 
@@ -1966,7 +1965,7 @@ def benchmark_low_PCN_genomes_with_breseq(
 def parse_breseq_results(breseq_outdir, results_csv_path):
     with open(results_csv_path, "w") as csv_fh:
         ## print a header string.
-        print("AnnotationAccession,SeqID,mean_coverage", file=csv_fh)
+        print("AnnotationAccession,TrimmedSeqID,mean_coverage", file=csv_fh)
         ## filter on IDs starting with "GCF_"
         for genome_accession in [x for x in os.listdir(breseq_outdir) if x.startswith("GCF_")]:
             breseq_summary_path = os.path.join(breseq_outdir, genome_accession, "output", "summary.html")
@@ -1991,9 +1990,11 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
 
             ## Print the extracted table data
             for i, row in enumerate(table_data):
-                SeqID = row[2]
+                ## breseq trims version numbers for SeqIDs. For example,
+                ## "NZ_CP072604.1" is reported as "NZ_CP072604".
+                TrimmedSeqID = row[2]
                 mean_coverage = row[4]
-                csv_string = ",".join([genome_accession, SeqID, mean_coverage])
+                csv_string = ",".join([genome_accession, TrimmedSeqID, mean_coverage])
                 print(csv_string, file=csv_fh)
     return
 
