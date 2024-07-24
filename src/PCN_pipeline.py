@@ -36,6 +36,7 @@ import polars as pl
 from tqdm import tqdm
 import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
+from bs4 import BeautifulSoup ## for parsing breseq output.
 
 """
 TODO list:
@@ -2057,10 +2058,12 @@ def main():
     ## directory for read alignments constructed with minimap2 for PCN estimate benchmarking.
     benchmark_alignment_dir = "../results/PIRA_benchmark_alignments/"
 
-    minimap2_benchmark_PIRA_PCN_csv_file = "../results/minimap2-PIRA-low-PCN-benchmark-estimates"
+    minimap2_benchmark_PIRA_PCN_csv_file = "../results/minimap2-PIRA-low-PCN-benchmark-estimates.csv"
 
     ## directory for breseq results for PCN estimate benchmarking.
     breseq_benchmark_results_dir = "../results/breseq_benchmark_results/"
+    ## summary of breseq coverage data.
+    breseq_benchmark_summary_file = "../results/breseq-low-PCN-benchmark-estimates.csv"
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -2575,8 +2578,8 @@ def main():
         print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
     else:
         stage26_start_time = time.time()  ## Record the start time
-
-        parse_breseq_results(breseq_outdir, results_csv_path) ## WORKING HERE!
+        
+        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)
         quit() ## FOR DEBUGGING
         
         stage26_end_time = time.time()  ## Record the end time
