@@ -2578,10 +2578,7 @@ def main():
         print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
     else:
         stage26_start_time = time.time()  ## Record the start time
-        
-        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)
-        quit() ## FOR DEBUGGING
-        
+        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
         stage26_end_time = time.time()  ## Record the end time
         stage26_execution_time = stage26_end_time - stage26_start_time
         Stage26TimeMessage = f"Stage 26 (breseq results parsing) execution time: {stage26_execution_time} seconds\n"
