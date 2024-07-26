@@ -1956,7 +1956,8 @@ def benchmark_low_PCN_genomes_with_breseq(
         ## now run breseq on this genome.
         breseq_args = ["breseq", "-o", my_breseq_outdir, "-r", reference_genome_path] + my_read_data_pathlist
         breseq_string = " ".join(breseq_args)
-        sbatch_string = "sbatch -p scavenger -t 6:00:00 --mem=16G --wrap=\"" + breseq_string + "\""
+        ## some samples can take more than 5 hours to run: set to 24h to be safe.
+        sbatch_string = "sbatch -p scavenger -t 24:00:00 --mem=16G --wrap=\"" + breseq_string + "\""
         print(sbatch_string)
         subprocess.run(sbatch_string, shell=True)
     return
