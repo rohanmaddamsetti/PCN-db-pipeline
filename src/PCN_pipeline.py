@@ -3,7 +3,7 @@
 """
 PCN_pipeline.py by Rohan Maddamsetti and Maggie Wilson.
 
-For this pipeline to work, ncbi datasets, pysradb, kallisto, themisto, minimap2, and breseq must be in the $PATH.
+For this pipeline to work, ncbi datasets, pysradb, kallisto, themisto, minimap2, and breseq 0.39+ must be in the $PATH.
 On the Duke Compute Cluster (DCC), run the following to get these programs into the path:
 conda activate PCNdb-env
 
@@ -41,9 +41,6 @@ from bs4 import BeautifulSoup ## for parsing breseq output.
 """
 TODO list:
 
-CRITICAL TODO: repeat the low-PCN benchmarking with breseq to see why the sequencing coverage
-is so low, and whether this has any important effects on PCN estimation.
-
 1) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
 Example:
 
@@ -64,6 +61,11 @@ AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as direct
 
 4) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
 and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
+
+Additional notes: the following breseq runs did not finish within 24h with 16GB of memory and 1 core:
+GCF_000025625.1_ASM2562v1
+GCF_014872735.1_ASM1487273v1
+
 
 """
 
@@ -1953,11 +1955,13 @@ def benchmark_low_PCN_genomes_with_breseq(
             my_read_data_pathlist += matched_fastq_list
         my_read_data_pathlist.sort() ## sort the read data paths for this genome.
 
-        ## now run breseq on this genome.
-        breseq_args = ["breseq", "-o", my_breseq_outdir, "-r", reference_genome_path] + my_read_data_pathlist
+        ## now run breseq on this genome, with 8 cores.
+        ncores = str(8)
+        breseq_args = ["breseq", "-j", ncores, "-o", my_breseq_outdir, "-r", reference_genome_path] + my_read_data_pathlist
         breseq_string = " ".join(breseq_args)
-        ## some samples can take more than 5 hours to run: set to 24h to be safe.
-        sbatch_string = "sbatch -p scavenger -t 24:00:00 --mem=16G --wrap=\"" + breseq_string + "\""
+        ## a few genomes can take more than 5 hours to run,
+        ## and two genomes take more than 24h.
+        sbatch_string = f"sbatch -p scavenger -t 48:00:00 --mem=16G --cpus-per-task={ncores} --wrap=\"" + breseq_string + "\""
         print(sbatch_string)
         subprocess.run(sbatch_string, shell=True)
     return
