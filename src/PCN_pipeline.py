@@ -503,7 +503,7 @@ def estimate_chr_plasmid_copy_numbers_from_genes(genecount_tsv_path):
     return(copy_number_dict)
 
 
-def calculate_NCBI_replicon_copy_numbers_from_genes(kallisto_quant_results_dir, copy_number_csv_file):
+def calculate_kallisto_replicon_copy_numbers_from_genes(kallisto_quant_results_dir, copy_number_csv_file):
     """
     define lists to encode the following columns of the table.
     AnnotationAccession, SeqID, SeqType, CopyNumber
@@ -569,7 +569,7 @@ def estimate_gene_copy_numbers(genecount_tsv_path):
     return(gene_copy_number_dict)
 
 
-def measure_NCBI_gene_copy_numbers(kallisto_gene_quant_results_dir, gene_copy_number_csv_file):
+def measure_kallisto_gene_copy_numbers(kallisto_gene_quant_results_dir, gene_copy_number_csv_file):
     """
     define lists to encode the following columns of the table.
     RefSeqID, SeqID, SeqType, locus_tag, product, CopyNumber
@@ -658,7 +658,7 @@ def estimate_replicon_copy_numbers(kallisto_replicon_count_tsv_path):
     return(replicon_copy_number_dict)
 
 
-def measure_NCBI_replicon_copy_numbers(kallisto_replicon_quant_results_dir, replicon_copy_number_csv_file):
+def measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, replicon_copy_number_csv_file):
     """
     define lists to encode the following columns of the table.
     RefSeqID, SeqID, SeqType, CopyNumber
@@ -2028,10 +2028,10 @@ def main():
     kallisto_replicon_index_dir = "../results/kallisto_replicon_indices/"
     kallisto_replicon_quant_results_dir = "../results/kallisto_replicon_quant/"
 
-    gene_copy_number_csv_file = "../results/NCBI-gene_copy_numbers.csv"
-    ARG_copy_number_csv_file = "../results/NCBI-ARG_copy_numbers.csv"
-    replicon_copy_number_csv_file = "../results/NCBI-replicon_copy_numbers.csv"
-    calculated_copy_number_csv_file = "../results/NCBI-replicon_copy_numbers_from_genes.csv"
+    kallisto_gene_copy_number_csv_file = "../results/kallisto-gene_copy_numbers.csv"
+    kallisto_ARG_copy_number_csv_file = "../results/kallisto-ARG_copy_numbers.csv"
+    kallisto_replicon_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers.csv"
+    kallisto_calculated_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers_from_genes.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
     ## directories for themisto inputs and outputs.
@@ -2237,9 +2237,9 @@ def main():
     else:
         stage9_start_time = time.time()  ## Record the start time
         ## first make a file containing the copy number estimates for each individual gene from kallisto
-        measure_NCBI_gene_copy_numbers(kallisto_gene_quant_results_dir, gene_copy_number_csv_file)
+        measure_kallisto_gene_copy_numbers(kallisto_gene_quant_results_dir, kallisto_gene_copy_number_csv_file)
         ## then filter that output file for ARGs (faster to do in python than downstream in R).
-        filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file)
+        filter_gene_copy_number_file_for_ARGs(kallisto_gene_copy_number_csv_file, kallisto_ARG_copy_number_csv_file)
 
         stage9_end_time = time.time()  ## Record the end time
         stage9_execution_time = stage9_end_time - stage9_start_time
@@ -2258,8 +2258,8 @@ def main():
         print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
     else:
         stage10_start_time = time.time()  ## Record the start time
-        calculate_NCBI_replicon_copy_numbers_from_genes(kallisto_gene_quant_results_dir, calculated_copy_number_csv_file)
-        measure_NCBI_replicon_copy_numbers(kallisto_replicon_quant_results_dir, replicon_copy_number_csv_file)
+        calculate_kallisto_replicon_copy_numbers_from_genes(kallisto_gene_quant_results_dir, kallisto_calculated_copy_number_csv_file)
+        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
 
         stage10_end_time = time.time()  ## Record the end time
         stage10_execution_time = stage10_end_time - stage10_start_time
