@@ -5,8 +5,7 @@
 
 ### Make a top-level directory with three directories inside, named "data", "results", and "src". Now copy all source code files in this repository into "src".
 
-#### Two files needed to run the program need to be downloaded into the data/ directory.
-#### data/plasmids.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/plasmids.txt
+#### The following file needs to be downloaded into the data/ directory.
 #### data/prokaryotes.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
 
 #### results/prokaryotes-with-chromosomes-and-plasmids.txt should then be generated with the following command (run from src/ directory):
@@ -17,7 +16,6 @@ This command ensures that every genome has both an annotated chromosome and at l
 SRA data for ~6000 genomes was downloaded, but only have about ~4500 reference genomes. to understand this discrepancy, I ran:
 cd ../data/NCBI-reference-genomes
 ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-genome-ids.txt
-
 
 
 ### Expected Output:
@@ -36,6 +34,7 @@ ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-ge
 #### install kallisto and ncbi-datasets-cli in this new environment
 ##### conda install bioconda::kallisto
 ##### conda install conda-forge::ncbi-datasets-cli
+##### conda install bioconda::breseq
 
 
 #### You will then need to load the SRA-Toolkit module that is available on DCC:
