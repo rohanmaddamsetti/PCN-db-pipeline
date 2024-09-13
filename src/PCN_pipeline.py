@@ -327,46 +327,6 @@ def all_fastq_data_exist(Run_IDs, SRA_data_dir):
         if  not os.path.exists(sra_fastq_path_2):
             return False
     return True
-        
-
-def generate_gene_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
-    print("making as output: ", outfile)
-    print("reading in as input:", gbk_gz_path)
-    with open(outfile, "w") as outfh:
-        with gzip.open(gbk_gz_path, 'rt') as gbk_gz_fh:
-            SeqID = None
-            SeqType = None
-            for i, record in enumerate(SeqIO.parse(gbk_gz_fh, "genbank")):
-                SeqID = record.id
-                if "chromosome" in record.description or i == 0:
-                    ## IMPORTANT: we assume here that the first record is a chromosome.
-                    SeqType = "chromosome"
-                elif "plasmid" in record.description:
-                    SeqType = "plasmid"
-                else:
-                    continue
-                for feature in record.features:
-                    ## only analyze protein-coding genes.
-                    if feature.type != "CDS": continue
-                    locus_tag = feature.qualifiers["locus_tag"][0]
-                    ## Important: for kallisto, we need to replace spaces with underscores in the product annotation field.
-                    product = feature.qualifiers["product"][0].replace(" ","_")
-                    DNAseq = feature.extract(record.seq)
-                    header = ">" + "|".join(["SeqID="+SeqID,"SeqType="+SeqType,"locus_tag="+locus_tag,"product="+product])
-                    outfh.write(header + "\n")
-                    outfh.write(str(DNAseq) + "\n")
-    return
-
-
-def make_NCBI_gene_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
-    ## this function makes fasta sequences for every gene in every genome.
-    gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
-    for gzfile in gzfilelist:
-        gzpath = os.path.join(refgenomes_dir, gzfile)
-        genome_id = gzfile.split(".gbff.gz")[0]
-        fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
-        generate_gene_level_fasta_reference_for_kallisto(gzpath, fasta_outfile)
-    return
 
 
 def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
@@ -457,163 +417,6 @@ def make_RefSeq_to_SRA_RunList_dict(RunID_table_csv):
             else:
                 RefSeq_to_SRA_RunList_dict[RefSeqID] = [RunID]
     return RefSeq_to_SRA_RunList_dict
-
-
-def parse_gene_metadata_in_header(target_id):
-    fields = target_id.split("|")
-    SeqID = fields[0].split("=")[-1]
-    SeqType = fields[1].split("=")[-1]
-    locus_tag = fields[2].split("=")[-1]
-    ## convert underscores back into spaces.
-    product = fields[3].split("=")[-1].replace("_", " ")
-    metadata_tuple = (SeqID, SeqType, locus_tag, product)
-    return(metadata_tuple)
-
-
-def estimate_chr_plasmid_copy_numbers_from_genes(genecount_tsv_path):
-    genome_dict = dict()
-    ## keys are SeqIDs.
-    ## values are a dict: {SeqType: "chromosome", total_length: 10000, total_est_counts: 100}
-    with open(genecount_tsv_path, "r") as in_fh:
-        for i, line in enumerate(in_fh):
-            if i == 0: continue ## skip header
-            target_id, length, eff_length, est_counts, tpm = line.split("\t")
-            SeqID, SeqType, locus_tag, product = parse_gene_metadata_in_header(target_id)
-            if SeqID in genome_dict:
-                genome_dict[SeqID]["total_length"] += float(length)
-                genome_dict[SeqID]["total_est_counts"] += float(est_counts)
-            else: ## Initialize the dictionary.
-                genome_dict[SeqID] = {"SeqType" : SeqType, "total_length" : float(length), "total_est_counts": float(est_counts)}
-    coverage_dict = dict()
-    ##keys are seq_ids, value is (SeqType, coverage) pair.
-    ## we set the default value to -1 so that we can catch error cases
-    ## where the chromosome is not found in the genome.
-    chromosome_coverage = -1
-    for SeqID, replicon_dict in genome_dict.items():
-        coverage = replicon_dict["total_est_counts"]/replicon_dict["total_length"]
-        coverage_dict[SeqID] = (replicon_dict["SeqType"], coverage)
-        if replicon_dict["SeqType"] == "chromosome":
-            chromosome_coverage = coverage
-            
-    ## now normalize by chromosome coverage to get copy number estimates.
-    copy_number_dict = dict()
-    for SeqID, value_tuple in coverage_dict.items():
-        seqtype, coverage = value_tuple
-        copy_number_dict[SeqID] = (seqtype, coverage/chromosome_coverage)
-    return(copy_number_dict)
-
-
-def calculate_kallisto_replicon_copy_numbers_from_genes(kallisto_quant_results_dir, copy_number_csv_file):
-    """
-    define lists to encode the following columns of the table.
-    AnnotationAccession, SeqID, SeqType, CopyNumber
-    """
-    AnnotationAccessionVec = []
-    SeqIDVec = []
-    SeqTypeVec = []
-    CopyNumberVec = []
-    ## skip .DS_Store and any other weird files.
-    genomedirectories = [x for x in os.listdir(kallisto_quant_results_dir) if x.startswith("GCF")]
-    for genomedir in genomedirectories:
-        ## I probably should have trimmed the '_genomic' suffix in an earlier step.
-        annotation_accession = genomedir.split("_genomic")[0]
-        genome_quantfile_path = os.path.join(kallisto_quant_results_dir, genomedir, "abundance.tsv")
-        copy_number_dict = estimate_chr_plasmid_copy_numbers_from_genes(genome_quantfile_path)
-        for SeqID, value_tuple in copy_number_dict.items():
-            seqtype, coverage = value_tuple
-            AnnotationAccessionVec.append(annotation_accession)
-            SeqIDVec.append(SeqID)
-            SeqTypeVec.append(seqtype)
-            CopyNumberVec.append(coverage)
-
-    assert len(AnnotationAccessionVec) == len(SeqIDVec) == len(SeqTypeVec) == len(CopyNumberVec)
-    ## now write the copy number data to file.
-    with open(copy_number_csv_file, "w") as outfh:
-        header = "AnnotationAccession,SeqID,SeqType,CopyNumber"
-        outfh.write(header + "\n")
-        for i in range(len(AnnotationAccessionVec)):
-            outfh.write(AnnotationAccessionVec[i] + "," + SeqIDVec[i] + "," + SeqTypeVec[i] + "," + str(CopyNumberVec[i]) + "\n")
-    return
-
-
-def estimate_gene_copy_numbers(genecount_tsv_path):
-
-    chromosomal_gene_length = 0.0
-    chromosomal_gene_est_counts = 0.0
-
-    gene_coverage_dict = dict()
-    ## get the chromosomal gene coverage, and get the coverage for all genes
-    with open(genecount_tsv_path, "r") as in_fh:
-        for i, line in enumerate(in_fh):
-            if i == 0: continue ## skip header
-            target_id, length, eff_length, est_counts, tpm = line.split("\t")
-            SeqID, SeqType, locus_tag, product = parse_gene_metadata_in_header(target_id)
-            coverage = float(est_counts) / float(length)
-            gene_coverage_dict[locus_tag] = (SeqID, SeqType, product, coverage)
-            if SeqType == "chromosome":
-                chromosomal_gene_length += float(length)
-                chromosomal_gene_est_counts += float(est_counts)
-    ## NOTE: GCF_026154285.1_ASM2615428v1 did not have any reads pseudoalign.
-    ## Return an empty dict() when nothing aligns to the chromosome.
-    if chromosomal_gene_length == 0:
-        print("WARNING: no reads pseudoaligned to chromosome in file: ", genecount_tsv_path)
-        print("estimate_gene_copy_numbers is returning an empty dict.")
-        return(dict())
-    chromosome_coverage = chromosomal_gene_est_counts / chromosomal_gene_length
-    ## now normalize by chromosome coverage to get copy number estimates.
-    gene_copy_number_dict = dict()
-    for locus_tag, value_tuple in gene_coverage_dict.items():
-        my_SeqID, my_SeqType, my_product, my_coverage = value_tuple
-        my_gene_copy_number = my_coverage / chromosome_coverage
-        gene_copy_number_dict[locus_tag] = (my_SeqID, my_SeqType, my_product, my_gene_copy_number)
-    return(gene_copy_number_dict)
-
-
-def measure_kallisto_gene_copy_numbers(kallisto_gene_quant_results_dir, gene_copy_number_csv_file):
-    """
-    define lists to encode the following columns of the table.
-    RefSeqID, SeqID, SeqType, locus_tag, product, CopyNumber
-    """
-    RefSeqIDVec = []
-    SeqIDVec = [] ## this is for the replicon.
-    SeqTypeVec = []
-    LocusTagVec = []
-    ProductVec = []
-    CopyNumberVec = []
-    
-    ## skip .DS_Store and any other weird files.
-    genomedirectories = [x for x in os.listdir(kallisto_gene_quant_results_dir) if x.startswith("GCF")]
-    for genomedir in genomedirectories:
-        refseq_id = "_".join(genomedir.split("_")[:2])
-        genome_quantfile_path = os.path.join(kallisto_gene_quant_results_dir, genomedir, "abundance.tsv")
-        gene_copy_number_dict = estimate_gene_copy_numbers(genome_quantfile_path)
-        for locus_tag, value_tuple in gene_copy_number_dict.items():
-            SeqID, seqtype, product, copy_number = value_tuple
-            RefSeqIDVec.append(refseq_id)
-            SeqIDVec.append(SeqID)
-            SeqTypeVec.append(seqtype)
-            LocusTagVec.append(locus_tag)
-            ProductVec.append(product)
-            CopyNumberVec.append(str(copy_number))
-
-    assert len(RefSeqIDVec) == len(SeqIDVec) == len(SeqTypeVec) == len(LocusTagVec) == len(ProductVec) == len(CopyNumberVec)
-
-    ## we have to double-quote all columns-- some fields in the product column contain commas!
-    RefSeqIDVec = ["\"" + x + "\"" for x in RefSeqIDVec]
-    SeqIDVec = ["\"" + x + "\"" for x in SeqIDVec]
-    SeqTypeVec = ["\"" + x + "\"" for x in SeqTypeVec]
-    LocusTagVec = ["\"" + x + "\"" for x in LocusTagVec]
-    ProductVec = ["\"" + x + "\"" for x in ProductVec]
-    CopyNumberVec = ["\"" + x + "\"" for x in CopyNumberVec]
-    
-    ## now write the gene copy number data to file.
-    with open(gene_copy_number_csv_file, "w") as outfh:
-        ## double-quote each column name in the header for consistency.
-        header = "\"RefSeqID\",\"SeqID\",\"SeqType\",\"locus_tag\",\"product\",\"CopyNumber\""
-        outfh.write(header + "\n")
-        for i in range(len(RefSeqIDVec)):
-            outfh.write(RefSeqIDVec[i] + "," + SeqIDVec[i] + "," + SeqTypeVec[i] + "," + LocusTagVec[i] + "," + ProductVec[i] + "," + CopyNumberVec[i] + "\n")
-    return
 
 
 def parse_replicon_metadata_in_header(target_id):
@@ -724,35 +527,6 @@ def tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file):
                     ## now write out the data for the replicon.
                     row = ','.join([annotation_accession, SeqID, SeqType, replicon_length])
                     outfh.write(row + "\n")
-    return
-
-def filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file):
-    ## define ARG keywords for pattern matching.
-    chloramphenicol_keywords = "chloramphenicol|Chloramphenicol"
-    tetracycline_keywords = "tetracycline efflux|Tetracycline efflux|TetA|Tet(A)|tetA|tetracycline-inactivating"
-    MLS_keywords = "macrolide|lincosamide|streptogramin"
-    multidrug_keywords = "Multidrug resistance|multidrug resistance|antibiotic resistance"
-    beta_lactam_keywords = "lactamase|LACTAMASE|beta-lactam|oxacillinase|carbenicillinase|betalactam\\S*"
-    glycopeptide_keywords = "glycopeptide resistance|VanZ|vancomycin resistance|VanA|VanY|VanX|VanH|streptothricin N-acetyltransferase"
-    polypeptide_keywords = "bacitracin|polymyxin B|phosphoethanolamine transferase|phosphoethanolamine--lipid A transferase"
-    diaminopyrimidine_keywords = "trimethoprim|dihydrofolate reductase|dihydropteroate synthase"
-    sulfonamide_keywords = "sulfonamide|Sul1|sul1|sulphonamide"
-    quinolone_keywords = "quinolone|Quinolone|oxacin|qnr|Qnr"
-    aminoglycoside_keywords = "Aminoglycoside|aminoglycoside|streptomycin|Streptomycin|kanamycin|Kanamycin|tobramycin|Tobramycin|gentamicin|Gentamicin|neomycin|Neomycin|16S rRNA (guanine(1405)-N(7))-methyltransferase|23S rRNA (adenine(2058)-N(6))-methyltransferase|spectinomycin 9-O-adenylyltransferase|Spectinomycin 9-O-adenylyltransferase|Rmt"
-    macrolide_keywords = "macrolide|ketolide|Azithromycin|azithromycin|Clarithromycin|clarithromycin|Erythromycin|erythromycin|Erm|EmtA"
-    antimicrobial_keywords = "QacE|Quaternary ammonium|quaternary ammonium|Quarternary ammonium|quartenary ammonium|fosfomycin|ribosomal protection|rifampin ADP-ribosyl|azole resistance|antimicrob\\S*"
-
-    antibiotic_keywords = "|".join([chloramphenicol_keywords, tetracycline_keywords, MLS_keywords, multidrug_keywords,
-                                    beta_lactam_keywords, glycopeptide_keywords, polypeptide_keywords, diaminopyrimidine_keywords,
-                                    sulfonamide_keywords, quinolone_keywords, aminoglycoside_keywords, macrolide_keywords, antimicrobial_keywords])
-
-    with open(gene_copy_number_csv_file, "r") as gene_fh, open(ARG_copy_number_csv_file, "w") as ARG_fh:
-        for i, line in enumerate(gene_fh):
-            if i == 0: ## dealing with the header
-                ARG_fh.write(line)
-            else:
-                if re.search(antibiotic_keywords, line):
-                    ARG_fh.write(line)
     return
 
 
@@ -2018,17 +1792,12 @@ def main():
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
-    ## directories for gene-level copy number estimation with kallisto.
-    kallisto_gene_ref_dir = "../results/kallisto_gene_references/"
-    kallisto_gene_index_dir = "../results/kallisto_gene_indices/"
-    kallisto_gene_quant_results_dir = "../results/kallisto_gene_quant/"
+
     ## directories for replicon-level copy number estimation with kallisto.
     kallisto_replicon_ref_dir = "../results/kallisto_replicon_references/"
     kallisto_replicon_index_dir = "../results/kallisto_replicon_indices/"
     kallisto_replicon_quant_results_dir = "../results/kallisto_replicon_quant/"
 
-    kallisto_gene_copy_number_csv_file = "../results/kallisto-gene_copy_numbers.csv"
-    kallisto_ARG_copy_number_csv_file = "../results/kallisto-ARG_copy_numbers.csv"
     kallisto_replicon_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers.csv"
     kallisto_calculated_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers_from_genes.csv"
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
@@ -2133,23 +1902,6 @@ def main():
         quit()
     
     #####################################################################################   
-    ## Stage 4: Make gene-level FASTA reference files for copy number estimation for genes in each genome using kallisto.
-    stage_4_complete_file = "../results/stage4.done"
-    if exists(stage_4_complete_file):
-        print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
-    else:
-        make_gene_fasta_ref_start_time = time.time()  ## Record the start time
-        make_NCBI_gene_fasta_refs_for_kallisto(reference_genome_dir, kallisto_gene_ref_dir)
-        make_gene_fasta_ref_end_time = time.time()  ## Record the end time
-        make_gene_fasta_ref_execution_time = make_gene_fasta_ref_end_time - make_gene_fasta_ref_start_time
-        Stage4TimeMessage = f"Stage 4 (making gene-level FASTA references for kallisto) execution time: {make_gene_fasta_ref_execution_time} seconds\n"
-        print(Stage4TimeMessage)
-        logging.info(Stage4TimeMessage)
-        with open(stage_4_complete_file, "w") as stage_4_complete_log:
-            stage_4_complete_log.write(Stage4TimeMessage)
-            stage_4_complete_log.write("Gene-level FASTA reference sequences for kallisto finished successfully.\n")
-        quit()
-
     ## Stage 5: Make replicon-level FASTA reference files for copy number estimation using kallisto.
     stage_5_complete_file = "../results/stage5.done"
     if exists(stage_5_complete_file):
@@ -2169,23 +1921,6 @@ def main():
         quit()
 
     #####################################################################################
-    ## Stage 6: Make gene-level kallisto index files for each genome.
-    stage_6_complete_file = "../results/stage6.done"
-    if exists(stage_6_complete_file):
-        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
-    else:
-        make_kallisto_gene_index_start_time = time.time()  ## Record the start time
-        make_NCBI_kallisto_indices(kallisto_gene_ref_dir, kallisto_gene_index_dir)
-        make_kallisto_gene_index_end_time = time.time()  ## Record the end time
-        make_kallisto_gene_index_execution_time = make_kallisto_gene_index_end_time - make_kallisto_gene_index_start_time
-        Stage6TimeMessage = f"Stage 6 (making gene-indices for kallisto) execution time: {make_kallisto_gene_index_execution_time} seconds\n"
-        print(Stage6TimeMessage)
-        logging.info(Stage6TimeMessage)
-        with open(stage_6_complete_file, "w") as stage_6_complete_log:
-            stage_6_complete_log.write(Stage6TimeMessage)
-            stage_6_complete_log.write("kallisto gene-index file construction finished successfully.\n")
-        quit()
-
     ## Stage 7: Make replicon-level kallisto index files for each genome.
     stage_7_complete_file = "../results/stage7.done"
     if exists(stage_7_complete_file):
@@ -2204,7 +1939,7 @@ def main():
         quit()
 
     #####################################################################################
-    ## Stage 8: run kallisto quant on all genome data, on both gene-level and replicon-level indices.
+    ## Stage 8: run kallisto quant on all genome data, on replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
     stage_8_complete_file = "../results/stage8.done"
     if exists(stage_8_complete_file):
@@ -2212,44 +1947,18 @@ def main():
     else:
         kallisto_quant_start_time = time.time()  ## Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        
-        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_gene_index_dir, SRA_data_dir, kallisto_gene_quant_results_dir)
         run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
 
         kallisto_quant_end_time = time.time()  ## Record the end time
         kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage8TimeMessage = f"Stage 8 (kallisto quant, gene-level and replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
+        Stage8TimeMessage = f"Stage 8 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
         print(Stage8TimeMessage)
         logging.info(Stage8TimeMessage)
         with open(stage_8_complete_file, "w") as stage_8_complete_log:
             stage_8_complete_log.write(Stage8TimeMessage)
-            stage_8_complete_log.write("kallisto quant, gene-level and replicon-level finished successfully.\n")
+            stage_8_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
         quit()
-            
-    #####################################################################################
-    ## Stage 9: make a table of the estimated copy number and position for all genes in all chromosomes
-    ## and plasmids in these genomes. My reasoning is that this may be useful for doing some analyses
-    ## like in David Zeevi's science paper about growth rates from chromosomal copy numbers.
-    stage_9_complete_file = "../results/stage9.done"
-    if exists(stage_9_complete_file):
-        print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
-    else:
-        stage9_start_time = time.time()  ## Record the start time
-        ## first make a file containing the copy number estimates for each individual gene from kallisto
-        measure_kallisto_gene_copy_numbers(kallisto_gene_quant_results_dir, kallisto_gene_copy_number_csv_file)
-        ## then filter that output file for ARGs (faster to do in python than downstream in R).
-        filter_gene_copy_number_file_for_ARGs(kallisto_gene_copy_number_csv_file, kallisto_ARG_copy_number_csv_file)
-
-        stage9_end_time = time.time()  ## Record the end time
-        stage9_execution_time = stage9_end_time - stage9_start_time
-        Stage9TimeMessage = f"Stage 9 (tabulate all gene copy numbers) execution time: {stage9_execution_time} seconds\n"
-        print(Stage9TimeMessage)
-        logging.info(Stage9TimeMessage)
-        with open(stage_9_complete_file, "w") as stage_9_complete_log:
-            stage_9_complete_log.write(Stage9TimeMessage)
-            stage_9_complete_log.write("stage 9 (tabulating all gene copy numbers) finished successfully.\n")
-        quit()
-
+    
     #####################################################################################
     ## Stage 10: make a table of the estimated copy number for all chromosomes and plasmids.
     stage_10_complete_file = "../results/stage10.done"
@@ -2257,7 +1966,6 @@ def main():
         print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
     else:
         stage10_start_time = time.time()  ## Record the start time
-        calculate_kallisto_replicon_copy_numbers_from_genes(kallisto_gene_quant_results_dir, kallisto_calculated_copy_number_csv_file)
         measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
 
         stage10_end_time = time.time()  ## Record the end time
