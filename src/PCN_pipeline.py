@@ -726,7 +726,6 @@ def tabulate_NCBI_replicon_lengths(refgenomes_dir, replicon_length_csv_file):
                     outfh.write(row + "\n")
     return
 
-
 def filter_gene_copy_number_file_for_ARGs(gene_copy_number_csv_file, ARG_copy_number_csv_file):
     ## define ARG keywords for pattern matching.
     chloramphenicol_keywords = "chloramphenicol|Chloramphenicol"
