@@ -850,64 +850,6 @@ def assign_multireplicon_reads(genome_df):
     return updated_df
 
 
-def simple_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv_file, simple_themisto_PCN_csv_file):
-    ## This function divides multireplicon reads equally among the relevant replicons.
-
-    ## Use a split-apply-combine strategy to break the big dataframe into smaller dataframes for each genome.
-    ## Then pass each data frame to a function that assigns multi-replicon reads to each of the replicons,
-    ## and produces a data frame that only has plasmids and chromosomes with the updated read counts.
-    ## then merge all these pieces together into a big dataframe.
-    ## finally, calculate PCN with this updated dataframe.
-    print("running simple themisto PCN estimation (partitioning multireplicon reads equally among replicons)")
-    ## import the data as polars dataframes.
-    replicon_length_df = pl.read_csv(replicon_length_csv_file)
-    themisto_read_count_df = pl.read_csv(themisto_results_csv_file)
-
-    ## initialize the list of dataframes for each genome with updated read counts.
-    list_of_updated_dfs = []
-    ## iterate over the data for each genome
-    for annotation_accession_group, genome_reads_df in themisto_read_count_df.group_by(["AnnotationAccession"]):
-        ## awkward notation to avoid deprecated behavior for iterating over groups in polars.
-        annotation_accession = annotation_accession_group[0]        
-        ## IMPORTANT: some replicons may not have any reads assigned to them,
-        ## say if they are completely contained in another replicon.
-        ## To handle this case, we need to initialize genome_df to have all the replicons,
-        ## with zeros assigned to ReadCount for replicons that are not present in genome_reads_df.
-        ## We can get the missing replicons from replicon_length_df.
-        genome_df = replicon_length_df.filter(pl.col("AnnotationAccession") == annotation_accession).join(
-            genome_reads_df, on = ["AnnotationAccession","SeqID","SeqType"], how="outer_coalesce")
-        
-        ## now assign multireplicon reads equally among the replicons that they match.
-        updated_df = assign_multireplicon_reads(genome_df)
-        list_of_updated_dfs.append(updated_df)
-
-    ## now merge the list of updated data frames.
-    simple_themisto_read_count_df =  pl.concat(list_of_updated_dfs).join(
-        ## and calculate SequencingCoverage
-        replicon_length_df, on = "SeqID").with_columns(
-            (pl.col("ReadCount") / pl.col("replicon_length")).alias("SequencingCoverage"))
-
-    ## make a second dataframe containing just the sequencing coverage for the longest replicon for each genome.
-    ## to do so, first group by AnnotationAccession and compute maximum replicon_length within each group.
-    longest_replicon_df = simple_themisto_read_count_df.group_by(
-        "AnnotationAccession").agg(pl.col("replicon_length").max()).join(
-            ## now join with the original DataFrame to filter for rows with the maximum replicon_length
-           simple_themisto_read_count_df, on=["AnnotationAccession", "replicon_length"], how="inner").select(
-                pl.col("AnnotationAccession", "SequencingCoverage")).with_columns(
-                    pl.col("SequencingCoverage").alias("LongestRepliconCoverage")).select(
-                        pl.col("AnnotationAccession", "LongestRepliconCoverage"))
-
-    ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
-    simple_themisto_PCN_df = simple_themisto_read_count_df.join(
-        longest_replicon_df, on = "AnnotationAccession", coalesce=True).with_columns(
-            (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
-
-    ## now write the simple PCN estimates to file.
-    print(simple_themisto_PCN_df)
-    simple_themisto_PCN_df.write_csv(simple_themisto_PCN_csv_file)
-    return
-
-
 def make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file):
     with open(gbk_annotation_file,"w") as out_fh:
         header = "Annotation_Accession,host,isolation_source\n"
@@ -1902,48 +1844,48 @@ def main():
         quit()
     
     #####################################################################################   
-    ## Stage 5: Make replicon-level FASTA reference files for copy number estimation using kallisto.
-    stage_5_complete_file = "../results/stage5.done"
-    if exists(stage_5_complete_file):
-        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
+    ## Stage 4: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    stage_4_complete_file = "../results/stage4.done"
+    if exists(stage_4_complete_file):
+        print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
     else:
         make_replicon_fasta_ref_start_time = time.time()  ## Record the start time
         make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
         make_replicon_fasta_ref_end_time = time.time()  ## Record the end time
         make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
-        Stage5TimeMessage = f"Stage 5 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
+        Stage4TimeMessage = f"Stage 4 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
 
-        print(Stage5TimeMessage)
-        logging.info(Stage5TimeMessage)
-        with open(stage_5_complete_file, "w") as stage_5_complete_log:
-            stage_5_complete_log.write(Stage5TimeMessage)
-            stage_5_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
+        print(Stage4TimeMessage)
+        logging.info(Stage4TimeMessage)
+        with open(stage_4_complete_file, "w") as stage_4_complete_log:
+            stage_4_complete_log.write(Stage5TimeMessage)
+            stage_4_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
         quit()
 
     #####################################################################################
-    ## Stage 7: Make replicon-level kallisto index files for each genome.
-    stage_7_complete_file = "../results/stage7.done"
-    if exists(stage_7_complete_file):
-        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
+    ## Stage 5: Make replicon-level kallisto index files for each genome.
+    stage_5_complete_file = "../results/stage5.done"
+    if exists(stage_5_complete_file):
+        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
     else:
         make_kallisto_replicon_index_start_time = time.time()  ## Record the start time
         make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
         make_kallisto_replicon_index_end_time = time.time()  ## Record the end time
         make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
-        Stage7TimeMessage = f"Stage 7 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
-        print(Stage7TimeMessage)
-        logging.info(Stage7TimeMessage)
-        with open(stage_7_complete_file, "w") as stage_7_complete_log:
-            stage_7_complete_log.write(Stage7TimeMessage)
-            stage_7_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
+        Stage5TimeMessage = f"Stage 5 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
+        print(Stage5TimeMessage)
+        logging.info(Stage5TimeMessage)
+        with open(stage_5_complete_file, "w") as stage_5_complete_log:
+            stage_5_complete_log.write(Stage5TimeMessage)
+            stage_5_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
         quit()
 
     #####################################################################################
-    ## Stage 8: run kallisto quant on all genome data, on replicon-level indices.
+    ## Stage 6: run kallisto quant on all genome data, on replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
-    stage_8_complete_file = "../results/stage8.done"
-    if exists(stage_8_complete_file):
-        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
+    stage_6_complete_file = "../results/stage6.done"
+    if exists(stage_6_complete_file):
+        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
     else:
         kallisto_quant_start_time = time.time()  ## Record the start time
         RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
@@ -1951,165 +1893,164 @@ def main():
 
         kallisto_quant_end_time = time.time()  ## Record the end time
         kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage8TimeMessage = f"Stage 8 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
+        Stage6TimeMessage = f"Stage 6 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
+        print(Stage6TimeMessage)
+        logging.info(Stage6TimeMessage)
+        with open(stage_6_complete_file, "w") as stage_6_complete_log:
+            stage_6_complete_log.write(Stage6TimeMessage)
+            stage_6_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
+        quit()
+    
+    #####################################################################################
+    ## Stage 7: make a table of the estimated copy number for all chromosomes and plasmids.
+    stage_7_complete_file = "../results/stage7.done"
+    if exists(stage_7_complete_file):
+        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
+    else:
+        stage7_start_time = time.time()  ## Record the start time
+        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
+
+        stage7_end_time = time.time()  ## Record the end time
+        stage7_execution_time = stage7_end_time - stage7_start_time
+        Stage7TimeMessage = f"Stage 7 (tabulate all replicon copy numbers) execution time: {stage7_execution_time} seconds\n"
+        print(Stage7TimeMessage)
+        logging.info(Stage7TimeMessage)
+        with open(stage_7_complete_file, "w") as stage_7_complete_log:
+            stage_7_complete_log.write(Stage7TimeMessage)
+            stage_7_complete_log.write("stage 7 (tabulating all replicon copy numbers) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Stage 8: tabulate the length of all chromosomes and plasmids.
+    stage_8_complete_file = "../results/stage8.done"
+    if exists(stage_8_complete_file):
+        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
+    else:
+        stage8_start_time = time.time()  ## Record the start time
+        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+        stage8_end_time = time.time()  ## Record the end time
+        stage8_execution_time = stage8_end_time - stage8_start_time
+        Stage8TimeMessage = f"Stage 8 (tabulate all replicon lengths) execution time: {stage8_execution_time} seconds\n"
         print(Stage8TimeMessage)
         logging.info(Stage8TimeMessage)
         with open(stage_8_complete_file, "w") as stage_8_complete_log:
             stage_8_complete_log.write(Stage8TimeMessage)
-            stage_8_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
+            stage_8_complete_log.write("stage 8 (tabulating all replicon lengths) finished successfully.\n")
         quit()
-    
+            
     #####################################################################################
-    ## Stage 10: make a table of the estimated copy number for all chromosomes and plasmids.
+    ## Stage 9: Make FASTA input files for Themisto.
+    ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
+    ## Then, write out a text file that contains the paths to the FASTA files of the genomes, one file per line.
+    ## See documentation here: https://github.com/algbio/themisto.
+    stage_9_complete_file = "../results/stage9.done"
+    if exists(stage_9_complete_file):
+        print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
+    else:
+        stage9_start_time = time.time()  ## Record the start time
+        make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
+        stage9_end_time = time.time()  ## Record the end time
+        stage9_execution_time = stage9_end_time - stage9_start_time
+        Stage9TimeMessage = f"Stage 9 (making fasta references for themisto) execution time: {stage9_execution_time} seconds\n"
+        print(Stage9TimeMessage)
+        logging.info(Stage9TimeMessage)
+        with open(stage_9_complete_file, "w") as stage_9_complete_log:
+            stage_9_complete_log.write(Stage9TimeMessage)
+            stage_9_complete_log.write("stage 9 (making fasta references for themisto) finished successfully.\n")
+        quit()
+        
+    #####################################################################################
+    ## Stage 10: Build separate Themisto indices for each genome.
     stage_10_complete_file = "../results/stage10.done"
     if exists(stage_10_complete_file):
         print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
     else:
         stage10_start_time = time.time()  ## Record the start time
-        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
-
+        make_NCBI_themisto_indices(themisto_replicon_ref_dir, themisto_replicon_index_dir)
         stage10_end_time = time.time()  ## Record the end time
         stage10_execution_time = stage10_end_time - stage10_start_time
-        Stage10TimeMessage = f"Stage 10 (tabulate all replicon copy numbers) execution time: {stage10_execution_time} seconds\n"
+        Stage10TimeMessage = f"Stage 10 (making indices for themisto) execution time: {stage10_execution_time} seconds\n"
         print(Stage10TimeMessage)
         logging.info(Stage10TimeMessage)
         with open(stage_10_complete_file, "w") as stage_10_complete_log:
             stage_10_complete_log.write(Stage10TimeMessage)
-            stage_10_complete_log.write("stage 10 (tabulating all replicon copy numbers) finished successfully.\n")
+            stage_10_complete_log.write("stage 10 (making indices for themisto) finished successfully.\n")
         quit()
-
+        
     #####################################################################################
-    ## Stage 11: tabulate the length of all chromosomes and plasmids.
+    ## Stage 11: Pseudoalign reads for each genome against each Themisto index.
+
     stage_11_complete_file = "../results/stage11.done"
     if exists(stage_11_complete_file):
         print(f"{stage_11_complete_file} exists on disk-- skipping stage 11.")
     else:
         stage11_start_time = time.time()  ## Record the start time
-        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)        
+        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
         stage11_end_time = time.time()  ## Record the end time
         stage11_execution_time = stage11_end_time - stage11_start_time
-        Stage11TimeMessage = f"Stage 11 (tabulate all replicon lengths) execution time: {stage11_execution_time} seconds\n"
+        Stage11TimeMessage = f"Stage 11 (themisto pseudoalignment) execution time: {stage11_execution_time} seconds\n"
         print(Stage11TimeMessage)
         logging.info(Stage11TimeMessage)
         with open(stage_11_complete_file, "w") as stage_11_complete_log:
             stage_11_complete_log.write(Stage11TimeMessage)
-            stage_11_complete_log.write("stage 11 (tabulating all replicon lengths) finished successfully.\n")
+            stage_11_complete_log.write("stage 11 (themisto pseudoalignment) finished successfully.\n")
         quit()
-            
+        
     #####################################################################################
-    ## Stage 12: Make FASTA input files for Themisto.
-    ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
-    ## Then, write out a text file that contains the paths to the FASTA files of the genomes, one file per line.
-    ## See documentation here: https://github.com/algbio/themisto.
+    ## Stage 12: generate a large CSV file summarizing the themisto pseudoalignment read counts.
     stage_12_complete_file = "../results/stage12.done"
     if exists(stage_12_complete_file):
         print(f"{stage_12_complete_file} exists on disk-- skipping stage 12.")
     else:
         stage12_start_time = time.time()  ## Record the start time
-        make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
+        summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
         stage12_end_time = time.time()  ## Record the end time
         stage12_execution_time = stage12_end_time - stage12_start_time
-        Stage12TimeMessage = f"Stage 12 (making fasta references for themisto) execution time: {stage12_execution_time} seconds\n"
+        Stage12TimeMessage = f"Stage 12 (themisto pseudoalignment summarization) execution time: {stage12_execution_time} seconds\n"
         print(Stage12TimeMessage)
         logging.info(Stage12TimeMessage)
         with open(stage_12_complete_file, "w") as stage_12_complete_log:
             stage_12_complete_log.write(Stage12TimeMessage)
-            stage_12_complete_log.write("stage 12 (making fasta references for themisto) finished successfully.\n")
+            stage_12_complete_log.write("stage 12 (themisto pseudoalignment summarization) finished successfully.\n")
         quit()
         
     #####################################################################################
-    ## Stage 13: Build separate Themisto indices for each genome.
+    ## Stage 13: estimate plasmid copy numbers using the themisto read counts.
     stage_13_complete_file = "../results/stage13.done"
     if exists(stage_13_complete_file):
         print(f"{stage_13_complete_file} exists on disk-- skipping stage 13.")
     else:
         stage13_start_time = time.time()  ## Record the start time
-        make_NCBI_themisto_indices(themisto_replicon_ref_dir, themisto_replicon_index_dir)
+        ## Naive PCN calculation, ignoring multireplicon reads.
+        naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
+
         stage13_end_time = time.time()  ## Record the end time
         stage13_execution_time = stage13_end_time - stage13_start_time
-        Stage13TimeMessage = f"Stage 13 (making indices for themisto) execution time: {stage13_execution_time} seconds\n"
+        Stage13TimeMessage = f"Stage 13 (themisto PCN estimates) execution time: {stage13_execution_time} seconds\n"
         print(Stage13TimeMessage)
         logging.info(Stage13TimeMessage)
         with open(stage_13_complete_file, "w") as stage_13_complete_log:
             stage_13_complete_log.write(Stage13TimeMessage)
-            stage_13_complete_log.write("stage 13 (making indices for themisto) finished successfully.\n")
+            stage_13_complete_log.write("stage 13 (themisto PCN estimates) finished successfully.\n")
         quit()
-        
-    #####################################################################################
-    ## Stage 14: Pseudoalign reads for each genome against each Themisto index.
 
+    #####################################################################################
+    ## Stage 14: make gbk ecological annotation file.
     stage_14_complete_file = "../results/stage14.done"
     if exists(stage_14_complete_file):
         print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
     else:
         stage14_start_time = time.time()  ## Record the start time
-        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)        
-        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
+        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
         stage14_end_time = time.time()  ## Record the end time
         stage14_execution_time = stage14_end_time - stage14_start_time
-        Stage14TimeMessage = f"Stage 14 (themisto pseudoalignment) execution time: {stage14_execution_time} seconds\n"
+        Stage14TimeMessage = f"Stage 14 (gbk ecological annotation) execution time: {stage14_execution_time} seconds\n"
         print(Stage14TimeMessage)
         logging.info(Stage14TimeMessage)
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
             stage_14_complete_log.write(Stage14TimeMessage)
-            stage_14_complete_log.write("stage 14 (themisto pseudoalignment) finished successfully.\n")
-        quit()
-        
-    #####################################################################################
-    ## Stage 15: generate a large CSV file summarizing the themisto pseudoalignment read counts.
-    stage_15_complete_file = "../results/stage15.done"
-    if exists(stage_15_complete_file):
-        print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
-    else:
-        stage15_start_time = time.time()  ## Record the start time
-        summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
-        stage15_end_time = time.time()  ## Record the end time
-        stage15_execution_time = stage15_end_time - stage15_start_time
-        Stage15TimeMessage = f"Stage 15 (themisto pseudoalignment summarization) execution time: {stage15_execution_time} seconds\n"
-        print(Stage15TimeMessage)
-        logging.info(Stage15TimeMessage)
-        with open(stage_15_complete_file, "w") as stage_15_complete_log:
-            stage_15_complete_log.write(Stage15TimeMessage)
-            stage_15_complete_log.write("stage 15 (themisto pseudoalignment summarization) finished successfully.\n")
-        quit()
-        
-    #####################################################################################
-    ## Stage 16: estimate plasmid copy numbers using the themisto read counts.
-    stage_16_complete_file = "../results/stage16.done"
-    if exists(stage_16_complete_file):
-        print(f"{stage_16_complete_file} exists on disk-- skipping stage 16.")
-    else:
-        stage16_start_time = time.time()  ## Record the start time
-        ## Naive PCN calculation, ignoring multireplicon reads.
-        naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
-        ## Simple PCN calculation, evenly distributing multireplicon reads over chromosomes and plasmids.
-        simple_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, simple_themisto_PCN_csv_file)
-        stage16_end_time = time.time()  ## Record the end time
-        stage16_execution_time = stage16_end_time - stage16_start_time
-        Stage16TimeMessage = f"Stage 16 (themisto PCN estimates) execution time: {stage16_execution_time} seconds\n"
-        print(Stage16TimeMessage)
-        logging.info(Stage16TimeMessage)
-        with open(stage_16_complete_file, "w") as stage_16_complete_log:
-            stage_16_complete_log.write(Stage16TimeMessage)
-            stage_16_complete_log.write("stage 16 (themisto PCN estimates) finished successfully.\n")
-        quit()
-
-    #####################################################################################
-    ## Stage 17: make gbk ecological annotation file.
-    stage_17_complete_file = "../results/stage17.done"
-    if exists(stage_17_complete_file):
-        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
-    else:
-        stage17_start_time = time.time()  ## Record the start time
-        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
-        stage17_end_time = time.time()  ## Record the end time
-        stage17_execution_time = stage17_end_time - stage17_start_time
-        Stage17TimeMessage = f"Stage 17 (gbk ecological annotation) execution time: {stage17_execution_time} seconds\n"
-        print(Stage17TimeMessage)
-        logging.info(Stage17TimeMessage)
-        with open(stage_17_complete_file, "w") as stage_17_complete_log:
-            stage_17_complete_log.write(Stage17TimeMessage)
-            stage_17_complete_log.write("stage 17 (gbk ecological annotation) finished successfully.\n")
+            stage_14_complete_log.write("stage 14 (gbk ecological annotation) finished successfully.\n")
         quit()
     
     #####################################################################################
@@ -2118,77 +2059,77 @@ def main():
     ## The Naive PCN calculation in Stage 16 generates the initial PCN vectors and saves them on disk.
     
     #####################################################################################
-    ## Stage 18: filter fastq reads for multireads.
+    ## Stage 15: filter fastq reads for multireads.
+    stage_15_complete_file = "../results/stage15.done"
+    if exists(stage_15_complete_file):
+        print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
+    else:
+        stage15_start_time = time.time()  ## Record the start time
+        filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
+        stage15_end_time = time.time()  ## Record the end time
+        stage15_execution_time = stage15_end_time - stage15_start_time
+        Stage15TimeMessage = f"Stage 15 (fastq read filtering) execution time: {stage15_execution_time} seconds\n"
+        print(Stage15TimeMessage)
+        logging.info(Stage15TimeMessage)
+        with open(stage_15_complete_file, "w") as stage_15_complete_log:
+            stage_15_complete_log.write(Stage15TimeMessage)
+            stage_15_complete_log.write("stage 15 (fastq read filtering) finished successfully.\n")
+        quit()
+    
+    #####################################################################################
+    ## Stage 16: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
+    stage_16_complete_file = "../results/stage19.done"
+    if exists(stage_16_complete_file):
+        print(f"{stage_16_complete_file} exists on disk-- skipping stage 16.")
+    else:
+        stage16_start_time = time.time()  ## Record the start time
+        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir)
+        stage16_end_time = time.time()  ## Record the end time
+        stage16_execution_time = stage16_end_time - stage16_start_time
+        Stage16TimeMessage = f"Stage 16 (making FASTA reference genomes for multiread alignment) execution time: {stage16_execution_time} seconds\n"
+        print(Stage16TimeMessage)
+        logging.info(Stage16TimeMessage)
+        with open(stage_16_complete_file, "w") as stage_16_complete_log:
+            stage_16_complete_log.write(Stage16TimeMessage)
+            stage_16_complete_log.write("stage 16 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Stage 17: for each genome, align multireads to the replicons with minimap2.
+    stage_17_complete_file = "../results/stage17.done"
+    if exists(stage_17_complete_file):
+        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
+    else:
+        stage17_start_time = time.time()  ## Record the start time
+        align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
+        stage17_end_time = time.time()  ## Record the end time
+        stage17_execution_time = stage17_end_time - stage17_start_time
+        Stage17TimeMessage = f"Stage 17 (aligning multireads with minimap2) execution time: {stage17_execution_time} seconds\n"
+        print(Stage17TimeMessage)
+        logging.info(Stage17TimeMessage)
+        with open(stage_17_complete_file, "w") as stage_17_complete_log:
+            stage_17_complete_log.write(Stage17TimeMessage)
+            stage_17_complete_log.write("stage 17 (aligning multireads with minimap2) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Stage 18: Run PIRA.
+    ## For each genome, parse minimap2 results to form the match matrix and refine the initial PCN guesses.
+
     stage_18_complete_file = "../results/stage18.done"
     if exists(stage_18_complete_file):
         print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
     else:
         stage18_start_time = time.time()  ## Record the start time
-        filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
+        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
         stage18_end_time = time.time()  ## Record the end time
         stage18_execution_time = stage18_end_time - stage18_start_time
-        Stage18TimeMessage = f"Stage 18 (fastq read filtering) execution time: {stage18_execution_time} seconds\n"
+        Stage18TimeMessage = f"Stage 18 (parsing multiread alignments and running PIRA) execution time: {stage18_execution_time} seconds\n"
         print(Stage18TimeMessage)
         logging.info(Stage18TimeMessage)
         with open(stage_18_complete_file, "w") as stage_18_complete_log:
             stage_18_complete_log.write(Stage18TimeMessage)
-            stage_18_complete_log.write("stage 18 (fastq read filtering) finished successfully.\n")
-        quit()
-    
-    #####################################################################################
-    ## Stage 19: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
-    stage_19_complete_file = "../results/stage19.done"
-    if exists(stage_19_complete_file):
-        print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
-    else:
-        stage19_start_time = time.time()  ## Record the start time
-        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir)
-        stage19_end_time = time.time()  ## Record the end time
-        stage19_execution_time = stage19_end_time - stage19_start_time
-        Stage19TimeMessage = f"Stage 19 (making FASTA reference genomes for multiread alignment) execution time: {stage19_execution_time} seconds\n"
-        print(Stage19TimeMessage)
-        logging.info(Stage19TimeMessage)
-        with open(stage_19_complete_file, "w") as stage_19_complete_log:
-            stage_19_complete_log.write(Stage19TimeMessage)
-            stage_19_complete_log.write("stage 19 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
-        quit()
-
-    #####################################################################################
-    ## Stage 20: for each genome, align multireads to the replicons with minimap2.
-    stage_20_complete_file = "../results/stage20.done"
-    if exists(stage_20_complete_file):
-        print(f"{stage_20_complete_file} exists on disk-- skipping stage 20.")
-    else:
-        stage20_start_time = time.time()  ## Record the start time
-        align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
-        stage20_end_time = time.time()  ## Record the end time
-        stage20_execution_time = stage20_end_time - stage20_start_time
-        Stage20TimeMessage = f"Stage 20 (aligning multireads with minimap2) execution time: {stage20_execution_time} seconds\n"
-        print(Stage20TimeMessage)
-        logging.info(Stage20TimeMessage)
-        with open(stage_20_complete_file, "w") as stage_20_complete_log:
-            stage_20_complete_log.write(Stage20TimeMessage)
-            stage_20_complete_log.write("stage 20 (aligning multireads with minimap2) finished successfully.\n")
-        quit()
-
-    #####################################################################################
-    ## Stage 21: Run PIRA.
-    ## For each genome, parse minimap2 results to form the match matrix and refine the initial PCN guesses.
-
-    stage_21_complete_file = "../results/stage21.done"
-    if exists(stage_21_complete_file):
-        print(f"{stage_21_complete_file} exists on disk-- skipping stage 21.")
-    else:
-        stage21_start_time = time.time()  ## Record the start time
-        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
-        stage21_end_time = time.time()  ## Record the end time
-        stage21_execution_time = stage21_end_time - stage21_start_time
-        Stage21TimeMessage = f"Stage 21 (parsing multiread alignments and running PIRA) execution time: {stage21_execution_time} seconds\n"
-        print(Stage21TimeMessage)
-        logging.info(Stage21TimeMessage)
-        with open(stage_21_complete_file, "w") as stage_21_complete_log:
-            stage_21_complete_log.write(Stage21TimeMessage)
-            stage_21_complete_log.write("stage 21 (parsing multiread alignments and running PIRA) finished successfully.\n")
+            stage_18_complete_log.write("stage 18 (parsing multiread alignments and running PIRA) finished successfully.\n")
         quit()
 
     #####################################################################################
@@ -2198,108 +2139,108 @@ def main():
     ## that apparently contain low PCN plasmids (PCN < 0.8), using minimap2.
     
     #####################################################################################
-    ## Stage 22: choose a set of 100 random genomes that contain plasmids with PCN < 1
+    ## Stage 19: choose a set of 100 random genomes that contain plasmids with PCN < 1
     ## and ReadCount > MIN_READ_COUNT.
+
+    stage_19_complete_file = "../results/stage19.done"
+    if exists(stage_19_complete_file):
+        print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
+    else:
+        stage19_start_time = time.time()  ## Record the start time
+        ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
+        choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
+        stage19_end_time = time.time()  ## Record the end time
+        stage19_execution_time = stage19_end_time - stage19_start_time
+        Stage19TimeMessage = f"Stage 19 (choosing 100 random genomes with PCN < 1) execution time: {stage19_execution_time} seconds\n"
+        print(Stage19TimeMessage)
+        logging.info(Stage19TimeMessage)
+        with open(stage_19_complete_file, "w") as stage_19_complete_log:
+            stage_19_complete_log.write(Stage19TimeMessage)
+            stage_19_complete_log.write("stage 19 (choosing 100 random genomes with PCN < 1) finished successfully.\n")
+        quit()
+
+
+    #####################################################################################
+    ## Stage 20: run minimap2 on the set of 100 genomes chosen in Stage 19.
+
+    stage_20_complete_file = "../results/stage20.done"
+    if exists(stage_20_complete_file):
+        print(f"{stage_20_complete_file} exists on disk-- skipping stage 20.")
+    else:
+        stage20_start_time = time.time()  ## Record the start time
+        align_reads_for_benchmark_genomes_with_minimap2(
+            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
+            SRA_data_dir, benchmark_alignment_dir)
+        stage20_end_time = time.time()  ## Record the end time
+        stage20_execution_time = stage20_end_time - stage20_start_time
+        Stage20TimeMessage = f"Stage 20 (minimap2 full alignment) execution time: {stage20_execution_time} seconds\n"
+        print(Stage20TimeMessage)
+        logging.info(Stage20TimeMessage)
+        with open(stage_20_complete_file, "w") as stage_20_complete_log:
+            stage_20_complete_log.write(Stage20TimeMessage)
+            stage_20_complete_log.write("stage 20 (minimap2 full alignment) finished successfully.\n")
+        quit()
+
+    #####################################################################################
+    ## Stage 21: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
+
+    stage_21_complete_file = "../results/stage21.done"
+    if exists(stage_21_complete_file):
+        print(f"{stage_21_complete_file} exists on disk-- skipping stage 21.")
+    else:
+        stage21_start_time = time.time()  ## Record the start time
+        benchmark_PCN_estimates_with_minimap2_alignments(
+            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
+            themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
+        stage21_end_time = time.time()  ## Record the end time
+        stage21_execution_time = stage21_end_time - stage21_start_time
+        Stage21TimeMessage = f"Stage 21 (minimap2 results parsing) execution time: {stage21_execution_time} seconds\n"
+        print(Stage21TimeMessage)
+        logging.info(Stage21TimeMessage)
+        with open(stage_21_complete_file, "w") as stage_21_complete_log:
+            stage_21_complete_log.write(Stage21TimeMessage)
+            stage_21_complete_log.write("stage 21 (minimap2 results parsing) finished successfully.\n")
+        quit()
+
+
+    #####################################################################################
+    ## Stage 22: run breseq on the set of 100 genomes chosen for benchmarking.
 
     stage_22_complete_file = "../results/stage22.done"
     if exists(stage_22_complete_file):
         print(f"{stage_22_complete_file} exists on disk-- skipping stage 22.")
     else:
         stage22_start_time = time.time()  ## Record the start time
-        ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
-        choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
+        benchmark_low_PCN_genomes_with_breseq(
+            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
         stage22_end_time = time.time()  ## Record the end time
         stage22_execution_time = stage22_end_time - stage22_start_time
-        Stage22TimeMessage = f"Stage 22 (choosing 100 random genomes with PCN < 1) execution time: {stage22_execution_time} seconds\n"
+        Stage22TimeMessage = f"Stage 22 (running breseq) execution time: {stage22_execution_time} seconds\n"
         print(Stage22TimeMessage)
         logging.info(Stage22TimeMessage)
         with open(stage_22_complete_file, "w") as stage_22_complete_log:
             stage_22_complete_log.write(Stage22TimeMessage)
-            stage_22_complete_log.write("stage 22 (choosing 100 random genomes with PCN < 1) finished successfully.\n")
+            stage_22_complete_log.write("stage 22 (running breseq) finished successfully.\n")
         quit()
 
-
     #####################################################################################
-    ## Stage 23: run minimap2 on the set of 100 genomes chosen in Stage 22.
+    ## Stage 23: parse breseq results on the set of 100 genomes chosen for benchmarking.
 
     stage_23_complete_file = "../results/stage23.done"
     if exists(stage_23_complete_file):
         print(f"{stage_23_complete_file} exists on disk-- skipping stage 23.")
     else:
         stage23_start_time = time.time()  ## Record the start time
-        align_reads_for_benchmark_genomes_with_minimap2(
-            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
-            SRA_data_dir, benchmark_alignment_dir)
+        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
         stage23_end_time = time.time()  ## Record the end time
         stage23_execution_time = stage23_end_time - stage23_start_time
-        Stage23TimeMessage = f"Stage 23 (minimap2 full alignment) execution time: {stage23_execution_time} seconds\n"
+        Stage23TimeMessage = f"Stage 23 (breseq results parsing) execution time: {stage23_execution_time} seconds\n"
         print(Stage23TimeMessage)
         logging.info(Stage23TimeMessage)
         with open(stage_23_complete_file, "w") as stage_23_complete_log:
             stage_23_complete_log.write(Stage23TimeMessage)
-            stage_23_complete_log.write("stage 23 (minimap2 full alignment) finished successfully.\n")
-        quit()
-
-    #####################################################################################
-    ## Stage 24: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
-
-    stage_24_complete_file = "../results/stage24.done"
-    if exists(stage_24_complete_file):
-        print(f"{stage_24_complete_file} exists on disk-- skipping stage 24.")
-    else:
-        stage24_start_time = time.time()  ## Record the start time
-        benchmark_PCN_estimates_with_minimap2_alignments(
-            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
-            themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
-        stage24_end_time = time.time()  ## Record the end time
-        stage24_execution_time = stage24_end_time - stage24_start_time
-        Stage24TimeMessage = f"Stage 24 (minimap2 results parsing) execution time: {stage24_execution_time} seconds\n"
-        print(Stage24TimeMessage)
-        logging.info(Stage24TimeMessage)
-        with open(stage_24_complete_file, "w") as stage_24_complete_log:
-            stage_24_complete_log.write(Stage24TimeMessage)
-            stage_24_complete_log.write("stage 24 (minimap2 results parsing) finished successfully.\n")
-        quit()
-
-
-    #####################################################################################
-    ## Stage 25: run breseq on the set of 100 genomes chosen for benchmarking.
-
-    stage_25_complete_file = "../results/stage25.done"
-    if exists(stage_25_complete_file):
-        print(f"{stage_25_complete_file} exists on disk-- skipping stage 25.")
-    else:
-        stage25_start_time = time.time()  ## Record the start time
-        benchmark_low_PCN_genomes_with_breseq(
-            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
-            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
-        stage25_end_time = time.time()  ## Record the end time
-        stage25_execution_time = stage25_end_time - stage25_start_time
-        Stage25TimeMessage = f"Stage 25 (running breseq) execution time: {stage25_execution_time} seconds\n"
-        print(Stage25TimeMessage)
-        logging.info(Stage25TimeMessage)
-        with open(stage_25_complete_file, "w") as stage_25_complete_log:
-            stage_25_complete_log.write(Stage25TimeMessage)
-            stage_25_complete_log.write("stage 25 (running breseq) finished successfully.\n")
-        quit()
-
-    #####################################################################################
-    ## Stage 26: parse breseq results on the set of 100 genomes chosen for benchmarking.
-
-    stage_26_complete_file = "../results/stage26.done"
-    if exists(stage_26_complete_file):
-        print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
-    else:
-        stage26_start_time = time.time()  ## Record the start time
-        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
-        stage26_end_time = time.time()  ## Record the end time
-        stage26_execution_time = stage26_end_time - stage26_start_time
-        Stage26TimeMessage = f"Stage 26 (breseq results parsing) execution time: {stage26_execution_time} seconds\n"
-        print(Stage26TimeMessage)
-        logging.info(Stage26TimeMessage)
-        with open(stage_26_complete_file, "w") as stage_26_complete_log:
-            stage_26_complete_log.write(Stage26TimeMessage)
-            stage_26_complete_log.write("stage 26 (breseq results parsing) finished successfully.\n")
+            stage_23_complete_log.write("stage 23 (breseq results parsing) finished successfully.\n")
         quit()
         
     return
