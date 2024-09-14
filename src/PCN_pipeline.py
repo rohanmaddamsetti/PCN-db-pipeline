@@ -11,9 +11,6 @@ IMPORTANT: this script assumes it is being run on DCC if sys.platform == "linux"
 This means that users on a linux machine will need to modify a couple functions if they
 are running this code locally, and cannot use slurm to submit many jobs in parallel.
 
-This pipeline only analyzes Illumina short-read data.
-Empirically, long-read data do not give accurate PCN information.
-
 """
 
 import subprocess
@@ -1741,7 +1738,7 @@ def main():
     kallisto_replicon_quant_results_dir = "../results/kallisto_replicon_quant/"
 
     kallisto_replicon_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers.csv"
-    kallisto_calculated_copy_number_csv_file = "../results/kallisto-replicon_copy_numbers_from_genes.csv"
+
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
     ## directories for themisto inputs and outputs.
