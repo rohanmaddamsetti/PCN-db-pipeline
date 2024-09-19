@@ -285,12 +285,18 @@ def download_fastq_reads(SRA_data_dir, Run_IDs):
             ## prefetch will create the prefetch_dir_path automatically-- give it the SRA_data_dir.
             ## default max-size is 20G, but some datasets are larger. So kick up the max-size.
             prefetch_args = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
+            print("Running prefetch.")
             print (" ".join(prefetch_args))
             subprocess.run(prefetch_args)
-        print("prefetch step completed.")
+        print("prefetch completed.")
         my_cwd = os.getcwd()
         os.chdir(SRA_data_dir)
         for Run_ID in Run_IDs:
+            print("Validating data integrity.")
+            vdb_validate_args = ["vdb-validate", Run_ID]
+            print(" ".join(vdb_validate_args))
+            subprocess.run(vdb_validate_args)
+            ## TODO: handle cases where the data has been corrupted.
             sra_fastq_file_1 = Run_ID + "_1.fastq"
             sra_fastq_file_2 = Run_ID + "_2.fastq"
             ## since we ran os.chdir(SRA_data_dir), this next line should work right.
