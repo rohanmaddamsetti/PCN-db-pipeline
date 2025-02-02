@@ -34,6 +34,7 @@ from tqdm import tqdm
 import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
+import asyncio
 
 """
 TODO list:
@@ -197,72 +198,87 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
     return my_md5_checksum == my_target_checksum
 
 
-def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
-    ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
-    ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
+async def download_single_genome(ftp_path, reference_genome_dir, log_file):
+    """Download a single genome and its MD5 file"""
+    my_full_accession = basename(ftp_path)
+    my_base_filename = my_full_accession + "_genomic.gbff.gz"
+    
+    # Files on the NCBI FTP site to download
+    gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
+    md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
+    
+    # Local paths
+    gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
+    md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
 
+    # Check if files exist and are valid
+    if exists(gbff_gz_file) and exists(md5_file):
+        if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+            print(f"{gbff_gz_file} SUCCEEDED.")
+            return True
+        else:
+            os.remove(gbff_gz_file)
+            os.remove(md5_file)
+
+    # Try downloading up to 5 times
+    attempts = 5
+    while attempts > 0:
+        try:
+            await asyncio.to_thread(urllib.request.urlretrieve, gbff_ftp_path, filename=gbff_gz_file)
+            await asyncio.to_thread(urllib.request.urlretrieve, md5_ftp_path, filename=md5_file)
+            
+            if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                print(f"{gbff_gz_file} SUCCEEDED.")
+                return True
+            else:
+                if exists(gbff_gz_file):
+                    os.remove(gbff_gz_file)
+                if exists(md5_file):
+                    os.remove(md5_file)
+                
+        except Exception as e:
+            print(f"Attempt {6-attempts} failed for {gbff_gz_file}: {str(e)}")
+            if exists(gbff_gz_file):
+                os.remove(gbff_gz_file)
+            if exists(md5_file):
+                os.remove(md5_file)
+        
+        attempts -= 1
+    
+    print(f"{gbff_gz_file} FAILED after all attempts")
+    return False
+
+async def async_download(ftp_paths, reference_genome_dir, log_file):
+    """Download genomes in parallel using asyncio"""
+    tasks = []
+    for ftp_path in tqdm(ftp_paths):
+        task = asyncio.create_task(download_single_genome(ftp_path, reference_genome_dir, log_file))
+        tasks.append(task)
+    
+    await asyncio.gather(*tasks)
+
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
+    """Download reference genomes for each genome in the RunID table"""
+    # Create reference genome directory if it doesn't exist
+    os.makedirs(reference_genome_dir, exist_ok=True)
+
+    # Get RefSeq IDs from the RunID table
     with open(RunID_table_file, "r") as RunID_file_obj:
         RunID_table_lines = RunID_file_obj.read().splitlines()
 
-    ## remove the header from the imported data.
+    # Remove the header from the imported data
     RunID_table_data = RunID_table_lines[1:]
-    ## get the first column to get all refseq_ids of interest.
-    ## set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome).
+    # Get the first column to get all refseq_ids of interest
+    # Set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome)
     refseq_ids = {line.split(",")[0] for line in RunID_table_data}
-    ## now look up the FTP URLs for each refseq id.
+    
+    # Look up the FTP URLs for each refseq id
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
-    with open(log_file, 'w') as log_fh: ## for tracking which genomes are downloaded and which failed.
-        for ftp_path in tqdm(ftp_paths):
-            ## note that the format of this accession is {refseqid}_{assemblyid}.
-            my_full_accession = basename(ftp_path)
-            my_base_filename = my_full_accession + "_genomic.gbff.gz"
-            ## files on the NCBI FTP site to download
-            gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
-            md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
-            ## local paths to download these files
-            gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
-            md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
+    # Run the async download
+    with open(log_file, 'w') as log_fh:  # Open log file for writing
+        asyncio.run(async_download(ftp_paths, reference_genome_dir, log_file))
 
-            if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                    print(f"{gbff_gz_file} SUCCEEDED.\n", file=log_fh) ## print to the log file,
-                    print(f"{gbff_gz_file} SUCCEEDED.\n") ## and print to stdout as well.
-                    continue
-                else:
-                    os.remove(gbff_gz_file)
-                    os.remove(md5_file)
-
-            gbff_fetch_attempts = 5
-            gbff_fetched = False
-
-            while not gbff_fetched and gbff_fetch_attempts:
-                try:
-                    urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                    urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
-                except urllib.error.URLError:
-                    ## if some problem happens, try again.
-                    gbff_fetch_attempts -= 1
-                    if gbff_fetch_attempts == 0:
-                        print(f"{gbff_gz_file} FAILED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} FAILED.") ## and print to stdout as well.
-                    ## delete the corrupted files if they exist.
-                    if exists(gbff_gz_file):
-                        os.remove(gbff_gz_file)
-                    if exists(md5_file):
-                        os.remove(md5_file)
-                ## if we are here, then assume the try block worked.
-                if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                    if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                        print(f"{gbff_gz_file} SUCCEEDED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} SUCCEEDED.") ## and print to stdout as well.
-                        gbff_fetched = True  ## assume success if the checksum matches,
-                        gbff_fetch_attempts = 0  ## and don't try again.
-                    else:
-                        os.remove(gbff_gz_file)
-                        os.remove(md5_file)
-    return
- 
 
 def get_Run_IDs_from_RunID_table(RunID_table_file):
     Run_IDs = list()
@@ -1733,7 +1749,7 @@ def main():
 
     ## define input and output files used in the pipeline.
 
-    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-chromosomes-and-plasmids.txt"
+    prokaryotes_with_plasmids_file = "../data/prokaryotes-with-plasmids.txt"
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
