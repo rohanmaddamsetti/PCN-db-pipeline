@@ -1749,7 +1749,7 @@ def main():
 
     ## define input and output files used in the pipeline.
 
-    prokaryotes_with_plasmids_file = "../data/prokaryotes-with-plasmids.txt"
+    prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
