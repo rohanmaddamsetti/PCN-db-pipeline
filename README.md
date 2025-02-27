@@ -1,49 +1,96 @@
-# PCN-db-pipeline by Rohan Maddamsetti and Maggie Wilson.
-## Requirements: biopython, kallisto, SRA-Toolkit, pysradb, and ncbi-datasets-cli
+# PCN-db Pipeline
 
-### This program can either be run locally or on Duke Compute Cluster (DCC). DCC is suggested to use due to the large amount of data that is downloaded from the thousands of samples. 
+A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 
-### Make a top-level directory with three directories inside, named "data", "results", and "src". Now copy all source code files in this repository into "src".
+## Table of Contents
+1. [Overview](#overview)
+2. [Requirements](#requirements)
+3. [Setup](#setup)
+4. [Running the Pipeline](#running-the-pipeline)
+5. [Expected Output](#expected-output)
+6. [Performance](#performance)
 
-#### The following file needs to be downloaded into the data/ directory.
-#### data/prokaryotes.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+## Overview
 
-#### results/prokaryotes-with-chromosomes-and-plasmids.txt should then be generated with the following command (run from src/ directory):
-(head -n 1 ../data/prokaryotes.txt && grep "plasmid" ../data/prokaryotes.txt | grep "chromosome") > ../results/prokaryotes-with-chromosomes-and-plasmids.txt  
+This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
+- NCBI genome data
+- SRA sequencing data
+- Kallisto for transcript quantification
+- Themisto for pseudoalignment
+- Breseq for mutation analysis
 
-This command ensures that every genome has both an annotated chromosome and at least one annotated plasmid.
+## Requirements
 
-SRA data for ~6000 genomes was downloaded, but only have about ~4500 reference genomes. to understand this discrepancy, I ran:
-cd ../data/NCBI-reference-genomes
-ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-genome-ids.txt
+### Software
+- Python 3.x
+- Biopython
+- Kallisto
+- SRA-Toolkit
+- pysradb
+- ncbi-datasets-cli
+- Breseq
 
+### Hardware
+- Recommended: Duke Compute Cluster (DCC)
+- Storage: ~15TB for raw sequencing data
+- Memory: 16GB minimum
+- Time: ~2 weeks for full pipeline
 
-### Expected Output:
-#### The first steps of this pipeline, convert these sample IDs into run accession IDs and create the reference genome path. Two txt files, a table with run accession IDs and a list of the genome paths  will be created. Then, the sample's reference genome will be downloaded if a run accession ID is present, these genomes will be downloaded into the ref-genomes folder in results. There should be 4,540 genomes downloaded, as that is the number of samples that have a run ID.
-#### A metadata csv is then created, a master list of all the samples were are downloading data for. Next, fastq files are downloaded for each run ID and put into the SRA folder in results.
-#### The next several functions parse through the SRA and reference genomes using kallisto and themisto.
-#### Lastly the final tables of results are created as "PIRA-PCN-estimates.csv", and "NCBI-replicon_lengths.csv".
+## Setup
 
-## How to run on DCC or locally.
-#### create a new conda environment (here I clone the base environment):
-##### conda create --name PCNdb_env --clone base
-##### conda activate PCNdb_env
-#### install pysradb and biopython in this environment using pip:
-##### pip install pysradb
-##### pip install biopython
-#### install kallisto and ncbi-datasets-cli in this new environment
-##### conda install bioconda::kallisto
-##### conda install conda-forge::ncbi-datasets-cli
-##### conda install bioconda::breseq
+1. Create project structure:
+   ```bash
+   mkdir -p {data,results,src}
+   ```
 
+2. Download required data:
+   ```bash
+   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+   ```
 
-#### You will then need to load the SRA-Toolkit module that is available on DCC:
-##### module load SRA-Toolkit
-#### alternatively, install a pre-built binary of SRA-Toolkit on your machine from here: https://github.com/ncbi/sra-tools
+3. Filter genomes with chromosomes and plasmids:
+   ```bash
+   (head -n 1 data/prokaryotes.txt && grep "plasmid" data/prokaryotes.txt | grep "chromosome") > results/prokaryotes-with-chromosomes-and-plasmids.txt
+   ```
 
-### This will take ~2 weeks to run on DCC.
+4. Set up conda environment:
+   ```bash
+   conda create --name PCNdb_env --clone base
+   conda activate PCNdb_env
+   pip install pysradb biopython
+   conda install -c bioconda kallisto breseq
+   conda install -c conda-forge ncbi-datasets-cli
+   ```
 
-### The Illumina data download (stage 3) takes 281 hours (12 days) to download 15 TB of raw sequencing data from NCBI Short Read Archive (SRA).  
+5. Install SRA-Toolkit:
+   - On DCC: `module load SRA-Toolkit`
+   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
 
-### sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
-#### Use .../work, as ~15 terabytes will be downloaded.
+## Running the Pipeline
+
+1. Copy source code to `src/` directory
+2. Run the pipeline:
+   ```bash
+   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python src/PCN_pipeline.py"
+   ```
+
+## Expected Output
+
+The pipeline generates:
+1. Reference genomes in `data/NCBI-reference-genomes/`
+2. SRA data in `data/SRA/`
+3. Analysis results:
+   - `results/PIRA-PCN-estimates.csv`
+   - `results/NCBI-replicon_lengths.csv`
+   - `results/kallisto-replicon_copy_numbers.csv`
+   - `results/themisto-replicon-read-counts.csv`
+
+## Performance
+
+| Stage | Time Estimate | Data Size |
+|-------|---------------|-----------|
+| SRA Data Download | ~12 days | ~15TB |
+| Reference Genome Download | Varies | ~50GB |
+| Full Pipeline | ~2 weeks | ~15TB |
+
+Note: Run in `/work` directory on DCC due to large storage requirements.

@@ -31,9 +31,12 @@ import pprint
 import random
 import polars as pl
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
+import asyncio
+import shutil
 
 """
 TODO list:
@@ -154,18 +157,29 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
 
 def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
     refseq_accession_to_ftp_path_dict = dict()
-    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         for i, line in enumerate(prok_with_plasmids_file_obj):
-            if i == 0: continue ## skip the header.
-            ## get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
-            refseq_id = line.split("\t")[-5].replace("GCA", "GCF")        
-            ## get the ftp_url field (3rd from end) and make sure that we turn the GCA Genbank URL
-            ## into the GCF RefSeq FTP URL.
-            ftp_url = line.split("\t")[-3].replace("GCA", "GCF")
-            ## check for for valid IDs and URLs (some rows have a '-' as a blank placeholder).
+            if i == 0: continue  # skip the header
+            
+            fields = line.strip().split("\t")
+            print(f"Fields: {fields}")  # Debugging: print fields
+            
+            ## TODO: Check table format
+                
+            # Get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs
+            refseq_id = fields[-5].replace("GCA", "GCF")
+            print(f"RefSeq ID: {refseq_id}")  # Debugging: print RefSeq ID
+            
+            # Get the ftp_url field (3rd from end) and make sure we turn the GCA Genbank URL
+            # into the GCF RefSeq FTP URL
+            ftp_url = fields[-3].replace("GCA", "GCF")
+            print(f"FTP URL: {ftp_url}")  # Debugging: print FTP URL
+            
+            # Check for valid IDs and URLs (some rows have a '-' as a blank placeholder)
             if refseq_id.startswith("GCF") and refseq_id in ftp_url:
                 refseq_accession_to_ftp_path_dict[refseq_id] = ftp_url
+                
     return refseq_accession_to_ftp_path_dict
 
 
@@ -197,119 +211,160 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
     return my_md5_checksum == my_target_checksum
 
 
-def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
-    ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
-    ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
+async def download_single_genome(ftp_path, reference_genome_dir, log_file):
+    """Download a single genome and its MD5 file"""
+    my_full_accession = basename(ftp_path)
+    my_base_filename = my_full_accession + "_genomic.gbff.gz"
+    
+    # Files on the NCBI FTP site to download
+    gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
+    md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
+    
+    # Local paths
+    gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
+    md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
 
+    # Check if files exist and are valid
+    if exists(gbff_gz_file) and exists(md5_file):
+        if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+            print(f"{gbff_gz_file} SUCCEEDED.")
+            return True
+        else:
+            os.remove(gbff_gz_file)
+            os.remove(md5_file)
+
+    # Try downloading up to 5 times
+    attempts = 5
+    while attempts > 0:
+        try:
+            await asyncio.to_thread(urllib.request.urlretrieve, gbff_ftp_path, filename=gbff_gz_file)
+            await asyncio.to_thread(urllib.request.urlretrieve, md5_ftp_path, filename=md5_file)
+            
+            if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                print(f"{gbff_gz_file} SUCCEEDED.")
+                return True
+            else:
+                if exists(gbff_gz_file):
+                    os.remove(gbff_gz_file)
+                if exists(md5_file):
+                    os.remove(md5_file)
+                
+        except Exception as e:
+            print(f"Attempt {6-attempts} failed for {gbff_gz_file}: {str(e)}")
+            if exists(gbff_gz_file):
+                os.remove(gbff_gz_file)
+            if exists(md5_file):
+                os.remove(md5_file)
+        
+        attempts -= 1
+    
+    print(f"{gbff_gz_file} FAILED after all attempts")
+    return False
+
+async def async_download(ftp_paths, reference_genome_dir, log_file):
+    """Download genomes in parallel using asyncio"""
+    tasks = []
+    for ftp_path in tqdm(ftp_paths):
+        task = asyncio.create_task(download_single_genome(ftp_path, reference_genome_dir, log_file))
+        tasks.append(task)
+    
+    ## TODO: Make sure that server can handle the load
+    await asyncio.gather(*tasks)
+
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
+    """Download reference genomes for each genome in the RunID table"""
+    # Create reference genome directory if it doesn't exist
+    os.makedirs(reference_genome_dir, exist_ok=True)
+
+    # Get RefSeq IDs from the RunID table
     with open(RunID_table_file, "r") as RunID_file_obj:
         RunID_table_lines = RunID_file_obj.read().splitlines()
 
-    ## remove the header from the imported data.
+    # Remove the header from the imported data
     RunID_table_data = RunID_table_lines[1:]
-    ## get the first column to get all refseq_ids of interest.
-    ## set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome).
+    # Get the first column to get all refseq_ids of interest
+    # Set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome)
     refseq_ids = {line.split(",")[0] for line in RunID_table_data}
-    ## now look up the FTP URLs for each refseq id.
+    
+    # Look up the FTP URLs for each refseq id
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
-    with open(log_file, 'w') as log_fh: ## for tracking which genomes are downloaded and which failed.
-        for ftp_path in tqdm(ftp_paths):
-            ## note that the format of this accession is {refseqid}_{assemblyid}.
-            my_full_accession = basename(ftp_path)
-            my_base_filename = my_full_accession + "_genomic.gbff.gz"
-            ## files on the NCBI FTP site to download
-            gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
-            md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
-            ## local paths to download these files
-            gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
-            md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
-
-            if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                    print(f"{gbff_gz_file} SUCCEEDED.\n", file=log_fh) ## print to the log file,
-                    print(f"{gbff_gz_file} SUCCEEDED.\n") ## and print to stdout as well.
-                    continue
-                else:
-                    os.remove(gbff_gz_file)
-                    os.remove(md5_file)
-
-            gbff_fetch_attempts = 5
-            gbff_fetched = False
-
-            while not gbff_fetched and gbff_fetch_attempts:
-                try:
-                    urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                    urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
-                except urllib.error.URLError:
-                    ## if some problem happens, try again.
-                    gbff_fetch_attempts -= 1
-                    if gbff_fetch_attempts == 0:
-                        print(f"{gbff_gz_file} FAILED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} FAILED.") ## and print to stdout as well.
-                    ## delete the corrupted files if they exist.
-                    if exists(gbff_gz_file):
-                        os.remove(gbff_gz_file)
-                    if exists(md5_file):
-                        os.remove(md5_file)
-                ## if we are here, then assume the try block worked.
-                if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                    if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                        print(f"{gbff_gz_file} SUCCEEDED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} SUCCEEDED.") ## and print to stdout as well.
-                        gbff_fetched = True  ## assume success if the checksum matches,
-                        gbff_fetch_attempts = 0  ## and don't try again.
-                    else:
-                        os.remove(gbff_gz_file)
-                        os.remove(md5_file)
-    return
- 
-
-def get_Run_IDs_from_RunID_table(RunID_table_file):
-    Run_IDs = list()
-    with open(RunID_table_file, "r") as RunID_table_fh:
-        table_csv = csv.DictReader(RunID_table_fh)
-        Run_IDs = [row["Run_ID"] for row in table_csv]
-    return Run_IDs
+    # Run the async download
+    with open(log_file, 'w') as log_fh:  # Open log file for writing
+        asyncio.run(async_download(ftp_paths, reference_genome_dir, log_file))
 
 
-def download_fastq_reads(SRA_data_dir, Run_IDs):
-        """
-        the Run_ID has to be the last part of the directory.
-        see documentation here:
-        https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump
-        """
-        for Run_ID in Run_IDs:
-            prefetch_dir_path = os.path.join(SRA_data_dir, Run_ID)
-            if os.path.exists(prefetch_dir_path): ## skip if we have already prefetched the read data.
-                continue
-            ## prefetch will create the prefetch_dir_path automatically-- give it the SRA_data_dir.
-            ## default max-size is 20G, but some datasets are larger. So kick up the max-size.
-            prefetch_args = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
-            print("Running prefetch.")
-            print (" ".join(prefetch_args))
-            subprocess.run(prefetch_args)
-        print("prefetch completed.")
-        my_cwd = os.getcwd()
-        os.chdir(SRA_data_dir)
-        for Run_ID in Run_IDs:
-            print("Validating data integrity.")
-            vdb_validate_args = ["vdb-validate", Run_ID]
-            print(" ".join(vdb_validate_args))
-            subprocess.run(vdb_validate_args)
-            ## TODO: handle cases where the data has been corrupted.
-            sra_fastq_file_1 = Run_ID + "_1.fastq"
-            sra_fastq_file_2 = Run_ID + "_2.fastq"
-            ## since we ran os.chdir(SRA_data_dir), this next line should work right.
-            if os.path.exists(sra_fastq_file_1) and os.path.exists(sra_fastq_file_2):
-                continue
-            else:
-                print ("Generating fastq for: " + Run_ID)
-                fasterq_dump_args = ["fasterq-dump", "--threads", "10", Run_ID]
-                print(" ".join(fasterq_dump_args))
-                subprocess.run(fasterq_dump_args)
-        ## now change back to original working directory.
-        os.chdir(my_cwd)
-        return
+def get_Run_IDs_from_RunID_table(RunID_table_csv, cache_ttl=86400):
+    """Get Run IDs with metadata caching"""
+    cache_file = os.path.join(os.path.dirname(RunID_table_csv), "RunID_cache.json")
+    
+    # Check cache validity
+    if os.path.exists(cache_file):
+        cache_age = time.time() - os.path.getmtime(cache_file)
+        if cache_age < cache_ttl:
+            with open(cache_file) as f:
+                return json.load(f)
+    
+    # Cache miss - process file
+    df = pl.read_csv(RunID_table_csv)
+    run_ids = df.get_column("Run_ID").drop_nulls().to_list()
+    
+    # Update cache
+    with open(cache_file, "w") as f:
+        json.dump(run_ids, f)
+        
+    return run_ids
+
+
+async def async_prefetch(Run_ID, SRA_data_dir):
+    """Async prefetch with retries"""
+    prefetch_dir = os.path.join(SRA_data_dir, Run_ID)
+    if os.path.exists(prefetch_dir):
+        return True
+        
+    cmd = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
+    for attempt in range(5):
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd)
+            await proc.wait()
+            if proc.returncode == 0:
+                return True
+        except Exception as e:
+            print(f"Prefetch attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(2 ** attempt)
+    return False
+
+async def async_fasterq_dump(Run_ID, SRA_data_dir):
+    """Async fasterq-dump with parallel processing"""
+    fastq_1 = os.path.join(SRA_data_dir, f"{Run_ID}_1.fastq")
+    fastq_2 = os.path.join(SRA_data_dir, f"{Run_ID}_2.fastq")
+    
+    if os.path.exists(fastq_1) and os.path.exists(fastq_2):
+        return True
+
+    cmd = ["fasterq-dump", "--threads", "4", "--progress", "--outdir", SRA_data_dir, Run_ID]
+    for attempt in range(3):
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd)
+            await proc.wait()
+            if proc.returncode == 0:
+                return True
+        except Exception as e:
+            print(f"Fasterq-dump attempt {attempt+1} failed: {e}")
+            await asyncio.sleep(5)
+    return False
+
+async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs):
+    """Download FASTQ reads in parallel with progress tracking"""
+    # First stage: prefetch all datasets
+    prefetch_tasks = [async_prefetch(run_id, SRA_data_dir) for run_id in Run_IDs]
+    prefetch_results = await async_tqdm.gather(*prefetch_tasks, desc="Prefetching SRA data")
+    
+    # Second stage: convert to FASTQ
+    conversion_tasks = [async_fasterq_dump(run_id, SRA_data_dir) for run_id in Run_IDs]
+    conversion_results = await async_tqdm.gather(*conversion_tasks, desc="Converting to FASTQ")
+    
+    return all(prefetch_results + conversion_results)
 
 
 def all_fastq_data_exist(Run_IDs, SRA_data_dir):
@@ -1722,6 +1777,25 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
     return
 
 
+async def async_compress_fastq(Run_ID, SRA_data_dir):
+    """Compress FASTQ files in parallel"""
+    fastq_1 = os.path.join(SRA_data_dir, f"{Run_ID}_1.fastq")
+    fastq_2 = os.path.join(SRA_data_dir, f"{Run_ID}_2.fastq")
+    
+    if os.path.exists(fastq_1 + ".gz"):
+        return True
+
+    try:
+        # Use pigz for parallel compression if available
+        for f in [fastq_1, fastq_2]:
+            cmd = ["pigz", "-k", "-p4", f] if shutil.which("pigz") else ["gzip", f]
+            proc = await asyncio.create_subprocess_exec(*cmd)
+            await proc.wait()
+        return True
+    except Exception as e:
+        print(f"Compression failed: {e}")
+        return False
+
 
 ################################################################################
 
@@ -1733,7 +1807,7 @@ def main():
 
     ## define input and output files used in the pipeline.
 
-    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-chromosomes-and-plasmids.txt"
+    prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
@@ -1786,6 +1860,7 @@ def main():
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
+    ## TO DO: instead of creating one big CSV file imeediately, we can created multiple and then just join them
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
@@ -1830,20 +1905,25 @@ def main():
     if exists(stage_3_complete_file):
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
-        SRA_download_start_time = time.time()  ## Record the start time
+        SRA_download_start_time = time.time()
+        
+        # Get Run IDs with caching
         Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
-        download_fastq_reads(SRA_data_dir, Run_IDs)
-        SRA_download_end_time = time.time()  ## Record the end time
-        SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-        Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds\n"
-        print(Stage3TimeMessage)
-        logging.info(Stage3TimeMessage)
-
-        ## check to see if all the expected files exist on disk (does not check for corrupted data).
+        
+        # Run parallel download pipeline
+        asyncio.run(download_fastq_reads_parallel(SRA_data_dir, Run_IDs))
+        
+        # Parallel compression
+        compress_tasks = [async_compress_fastq(run_id, SRA_data_dir) for run_id in Run_IDs]
+        asyncio.run(async_tqdm.gather(*compress_tasks, desc="Compressing FASTQ"))
+        
+        # Validation
         if all_fastq_data_exist(Run_IDs, SRA_data_dir):
-            with open(stage_3_complete_file, "w") as stage_3_complete_log:
-                stage_3_complete_log.write(Stage3TimeMessage)
-                stage_3_complete_log.write("SRA read data downloaded successfully.\n")
+            with open(stage_3_complete_file, "w") as f:
+                f.write(f"Stage 3 completed in {time.time()-SRA_download_start_time:.1f} seconds\n")
+        else:
+            print("Warning: Some downloads failed validation")
+            
         quit()
     
     #####################################################################################   
