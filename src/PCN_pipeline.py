@@ -31,6 +31,7 @@ import pprint
 import random
 import polars as pl
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
@@ -156,18 +157,29 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
 
 def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
     refseq_accession_to_ftp_path_dict = dict()
-    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         for i, line in enumerate(prok_with_plasmids_file_obj):
-            if i == 0: continue ## skip the header.
-            ## get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
-            refseq_id = line.split("\t")[-5].replace("GCA", "GCF")        
-            ## get the ftp_url field (3rd from end) and make sure that we turn the GCA Genbank URL
-            ## into the GCF RefSeq FTP URL.
-            ftp_url = line.split("\t")[-3].replace("GCA", "GCF")
-            ## check for for valid IDs and URLs (some rows have a '-' as a blank placeholder).
+            if i == 0: continue  # skip the header
+            
+            fields = line.strip().split("\t")
+            print(f"Fields: {fields}")  # Debugging: print fields
+            
+            ## TODO: Check table format
+                
+            # Get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs
+            refseq_id = fields[-5].replace("GCA", "GCF")
+            print(f"RefSeq ID: {refseq_id}")  # Debugging: print RefSeq ID
+            
+            # Get the ftp_url field (3rd from end) and make sure we turn the GCA Genbank URL
+            # into the GCF RefSeq FTP URL
+            ftp_url = fields[-3].replace("GCA", "GCF")
+            print(f"FTP URL: {ftp_url}")  # Debugging: print FTP URL
+            
+            # Check for valid IDs and URLs (some rows have a '-' as a blank placeholder)
             if refseq_id.startswith("GCF") and refseq_id in ftp_url:
                 refseq_accession_to_ftp_path_dict[refseq_id] = ftp_url
+                
     return refseq_accession_to_ftp_path_dict
 
 
@@ -256,6 +268,7 @@ async def async_download(ftp_paths, reference_genome_dir, log_file):
         task = asyncio.create_task(download_single_genome(ftp_path, reference_genome_dir, log_file))
         tasks.append(task)
     
+    ## TODO: Make sure that server can handle the load
     await asyncio.gather(*tasks)
 
 def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
@@ -345,11 +358,11 @@ async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs):
     """Download FASTQ reads in parallel with progress tracking"""
     # First stage: prefetch all datasets
     prefetch_tasks = [async_prefetch(run_id, SRA_data_dir) for run_id in Run_IDs]
-    prefetch_results = await tqdm.gather(*prefetch_tasks, desc="Prefetching SRA data")
+    prefetch_results = await async_tqdm.gather(*prefetch_tasks, desc="Prefetching SRA data")
     
     # Second stage: convert to FASTQ
     conversion_tasks = [async_fasterq_dump(run_id, SRA_data_dir) for run_id in Run_IDs]
-    conversion_results = await tqdm.gather(*conversion_tasks, desc="Converting to FASTQ")
+    conversion_results = await async_tqdm.gather(*conversion_tasks, desc="Converting to FASTQ")
     
     return all(prefetch_results + conversion_results)
 
@@ -1847,6 +1860,7 @@ def main():
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
+    ## TO DO: instead of creating one big CSV file imeediately, we can created multiple and then just join them
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
@@ -1901,7 +1915,7 @@ def main():
         
         # Parallel compression
         compress_tasks = [async_compress_fastq(run_id, SRA_data_dir) for run_id in Run_IDs]
-        asyncio.run(tqdm.gather(*compress_tasks, desc="Compressing FASTQ"))
+        asyncio.run(async_tqdm.gather(*compress_tasks, desc="Compressing FASTQ"))
         
         # Validation
         if all_fastq_data_exist(Run_IDs, SRA_data_dir):
