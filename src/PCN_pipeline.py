@@ -65,8 +65,6 @@ and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
 Additional notes: the following breseq runs did not finish within 24h with 16GB of memory and 1 core:
 GCF_000025625.1_ASM2562v1
 GCF_014872735.1_ASM1487273v1
-
-
 """
 
 
@@ -75,6 +73,8 @@ GCF_014872735.1_ASM1487273v1
 
 def get_SRA_ID_from_RefSeqID(refseq_id):
     ## datasets must be in $PATH.
+    logging.info(f"Getting SRA ID for {refseq_id}...")
+    logging.info(f"Running command: datasets summary genome accession {refseq_id}")
     bash_command = f'datasets summary genome accession {refseq_id}'
     cmd_output = subprocess.check_output(bash_command, shell=True)
     json_output = cmd_output.decode('utf-8')
@@ -131,6 +131,7 @@ def fetch_Run_IDs_with_pysradb(sra_id):
 
 def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_outfile):
     ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    logging.info("Creating RefSeq SRA RunID table...")
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         prok_with_plasmids_lines = prok_with_plasmids_file_obj.read().splitlines()
     ## skip the header.
@@ -141,16 +142,20 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_ou
     refseq_ids = [x for x in refseq_id_column if x.startswith("GCF")]
     ## now make the RunID csv file.
     with open(RunID_table_outfile, "w") as RunID_table_outfile_obj:
+        logging.info("Writing header to RunID table...")
         header = "RefSeq_ID,SRA_ID,Run_ID\n"
-        RunID_table_outfile_obj.write(header) 
+        RunID_table_outfile_obj.write(header)
+        ## TODO: Use ThreadPoolExecutor to parallelize the fetching of SRA IDs and Run IDs.
         for RefSeq_accession in refseq_ids:
+            logging.info(f"Getting SRA ID for {RefSeq_accession}...")
             my_SRA_ID = get_SRA_ID_from_RefSeqID(RefSeq_accession)
             if my_SRA_ID == "NA": continue ## skip genomes without SRA data.
+            logging.info(f"Fetching Run IDs for {my_SRA_ID}...")
             Run_IDs = fetch_Run_IDs_with_pysradb(my_SRA_ID)
             for my_Run_ID in Run_IDs:
                 if my_Run_ID == "0" or my_Run_ID == "nan": continue ## skip bad Run_IDs
                 row = f"{RefSeq_accession},{my_SRA_ID},{my_Run_ID}\n"
-                print(row) ## just to show that the program is running properly.
+                # print(row) ## just to show that the program is running properly.
                 RunID_table_outfile_obj.write(row)
     return
 
@@ -1803,11 +1808,23 @@ def main():
 
     ## Configure logging
     run_log_file = "../results/PCN-pipeline-log.txt"
-    logging.basicConfig(filename=run_log_file, level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("pipeline.log"),
+            logging.StreamHandler()
+        ]
+    )
+
+    logging.info("Starting the pipeline...")
+    # logging.basicConfig(filename=run_log_file, level=logging.INFO)
 
     ## define input and output files used in the pipeline.
 
     prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
+    ## TODO: truncate the files to 100 genomes 
+
     RunID_table_csv = "../results/RunID_table.csv"
     reference_genome_dir = "../data/NCBI-reference-genomes/"
     SRA_data_dir = "../data/SRA/"
@@ -1866,6 +1883,7 @@ def main():
         print(Stage1DoneMessage)
         logging.info(Stage1DoneMessage)
     else: ## This takes 34513 seconds (9.5h) to get RunIDs for 4921 genomes.
+        logging.info("Stage 1: getting SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.")
         RunID_table_start_time = time.time()  # Record the start time
         create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv)
         RunID_table_end_time = time.time()  # Record the end time
@@ -1887,6 +1905,7 @@ def main():
     if exists(stage_2_complete_file):
         print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
     else:
+        logging.info("Stage 2: downloading reference genomes for all genomes containing plasmids.")
         refgenome_download_start_time = time.time()  ## Record the start time
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
         ## now download the reference genomes.
@@ -1905,6 +1924,7 @@ def main():
     if exists(stage_3_complete_file):
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
+        logging.info("Stage 3: downloading Illumina reads for the genomes from the NCBI Short Read Archive (SRA).")
         SRA_download_start_time = time.time()
         
         # Get Run IDs with caching
