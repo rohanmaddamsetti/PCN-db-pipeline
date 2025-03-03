@@ -24,8 +24,8 @@ WORKDIR /app
 
 COPY . /app
 
-RUN mkdir data
-RUN mkdir results
+RUN mkdir -p data
+RUN mkdir -p results
 
 RUN wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
 
