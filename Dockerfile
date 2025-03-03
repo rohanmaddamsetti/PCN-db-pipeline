@@ -48,4 +48,4 @@ WORKDIR /app/src
 
 # # Reset shell to default and provide a command that activates the environment when the container starts
 SHELL ["/bin/bash", "-c"]
-CMD ["conda", "run", "-n", "PCNdb_env", "python3", "PCN_pipeline.py"]
+CMD ["conda", "run", "--no-capture-output", "-n", "PCNdb_env", "python3", "PCN_pipeline.py"]

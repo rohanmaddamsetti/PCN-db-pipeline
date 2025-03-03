@@ -90,9 +90,7 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
                     break
     return(sra_id)
 
-
 def fetch_Run_IDs_with_pysradb(sra_id):
-    
     ## pysradb must be in $PATH.
     pysradb_command = f'pysradb metadata {sra_id}'
     pysradb_attempts = 5
@@ -1878,6 +1876,7 @@ def main():
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
     ## TO DO: instead of creating one big CSV file imeediately, we can created multiple and then just join them
+    logging.info("Stage 1: getting SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.")
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
