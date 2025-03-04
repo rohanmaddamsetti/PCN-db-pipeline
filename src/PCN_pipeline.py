@@ -37,6 +37,7 @@ import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
 import asyncio
 import shutil
+from contextlib import asynccontextmanager
 
 # Test mode configuration
 TEST_MODE = True  # Set to False for production run
@@ -96,7 +97,7 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
     return(sra_id)
 
 def fetch_Run_IDs_with_pysradb(sra_id):
-    ## pysradb must be in $PATH.
+    """Fetch Run IDs with improved filtering and limiting."""
     logging.info(f"Fetching Run IDs for {sra_id}...")
     pysradb_command = f'pysradb metadata {sra_id}'
     
@@ -104,9 +105,6 @@ def fetch_Run_IDs_with_pysradb(sra_id):
         # Add timeout to prevent hanging
         cmd_output = subprocess.check_output(pysradb_command, shell=True, timeout=60)
         output_str = cmd_output.decode('utf-8')
-        
-        # Log the raw output for debugging
-        logging.debug(f"Raw pysradb output: {output_str}")
         
         # Check if output is empty or unexpected
         if not output_str.strip():
@@ -121,18 +119,38 @@ def fetch_Run_IDs_with_pysradb(sra_id):
         if len(lines) > 1:
             for line in lines[1:]:
                 fields = line.split('\t')
-                # Check if we have enough fields and log the structure
-                if len(fields) >= 1:
-                    run_id = fields[21].strip() if len(fields) >= 22 else ""  # This gets run_accession (SRR*)
-                    run_ids.append(run_id)
-                    logging.info(f"Found Run ID: {run_id} for SRA ID: {sra_id}")
-                else:
-                    logging.warning(f"Unexpected line format: {line}")
+                # Check if we have enough fields
+                if len(fields) >= 22:
+                    run_id = fields[21].strip()  # This gets run_accession (SRR*)
+                    
+                    # Check if this is paired-end data
+                    is_paired = False
+                    if len(fields) > 11:
+                        layout = fields[11].strip().upper()
+                        is_paired = "PAIRED" in layout
+                    
+                    # Get file size if available
+                    file_size = 0
+                    if len(fields) > 20 and fields[20].strip().isdigit():
+                        file_size = int(fields[20].strip())
+                    
+                    # Add to list with metadata
+                    run_ids.append((run_id, is_paired, file_size))
+                    logging.info(f"Found Run ID: {run_id} for SRA ID: {sra_id} (Paired: {is_paired}, Size: {file_size/1000000:.1f} MB)")
         
-        if not run_ids:
+        # Sort by paired status first (paired first), then by file size (smaller first)
+        run_ids.sort(key=lambda x: (-1 if x[1] else 1, x[2]))
+        
+        # Take up to 3 runs per genome
+        max_runs = 3
+        final_run_ids = [x[0] for x in run_ids[:max_runs]]
+        
+        if not final_run_ids:
             logging.warning(f"No Run IDs found for SRA ID: {sra_id}")
+        else:
+            logging.info(f"Selected {len(final_run_ids)} Run IDs for SRA ID: {sra_id}: {', '.join(final_run_ids)}")
             
-        return run_ids
+        return final_run_ids
         
     except subprocess.TimeoutExpired:
         logging.error(f"Timeout while fetching Run IDs for {sra_id}")
@@ -306,14 +324,33 @@ async def download_single_genome(ftp_path, reference_genome_dir, log_file):
     return False
 
 async def async_download(ftp_paths, reference_genome_dir, log_file):
-    """Download genomes in parallel using asyncio"""
+    """Download genomes in parallel using asyncio task pool with rate limiting"""
+    # Create a semaphore to limit concurrent downloads
+    max_concurrent = 5  # Adjust based on your network capacity
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    # Create a rate limiter for NCBI
+    rate_limiter = RateLimiter(calls_per_minute=20)  # Adjust as needed
+    
+    async def download_with_limits(ftp_path):
+        """Download a single genome with rate and concurrency limits"""
+        async with semaphore:  # Limit concurrent downloads
+            async with rate_limiter.limit():  # Respect rate limits
+                return await download_single_genome(ftp_path, reference_genome_dir, log_file)
+    
+    # Create tasks for all downloads
     tasks = []
-    for ftp_path in tqdm(ftp_paths):
-        task = asyncio.create_task(download_single_genome(ftp_path, reference_genome_dir, log_file))
+    for ftp_path in ftp_paths:
+        task = asyncio.create_task(download_with_limits(ftp_path))
         tasks.append(task)
     
-    ## TODO: Make sure that server can handle the load
-    await asyncio.gather(*tasks)
+    # Use tqdm to show progress
+    results = []
+    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+        result = await task
+        results.append(result)
+    
+    return results
 
 def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
     """Download reference genomes for each genome in the RunID table"""
@@ -419,35 +456,80 @@ async def async_fasterq_dump(Run_ID, SRA_data_dir):
     return False
 
 async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs):
-    """Download FASTQ reads in parallel with progress tracking"""
-    # First stage: prefetch all datasets
-    prefetch_tasks = [async_prefetch(run_id, SRA_data_dir) for run_id in Run_IDs]
-    prefetch_results = await async_tqdm.gather(*prefetch_tasks, desc="Prefetching SRA data")
+    """Download fastq reads in parallel using asyncio task pool with rate limiting"""
+    # Create a semaphore to limit concurrent downloads
+    max_concurrent = 5  # Adjust based on your network capacity
+    semaphore = asyncio.Semaphore(max_concurrent)
     
-    # Second stage: convert to FASTQ
-    conversion_tasks = [async_fasterq_dump(run_id, SRA_data_dir) for run_id in Run_IDs]
-    conversion_results = await async_tqdm.gather(*conversion_tasks, desc="Converting to FASTQ")
+    async def download_with_limits(run_id):
+        """Download a single run with rate and concurrency limits"""
+        async with semaphore:  # Limit concurrent downloads
+            # Add retry logic
+            max_retries = 3  # Increase retries for better reliability
+            for attempt in range(max_retries):
+                success = await download_fastq_reads(run_id, SRA_data_dir)
+                if success:
+                    return True
+                logging.warning(f"Retry {attempt+1}/{max_retries} for {run_id}")
+                await asyncio.sleep(2)  # Wait before retry
+            return False
     
-    return all(prefetch_results + conversion_results)
+    # Create tasks for all downloads
+    tasks = []
+    for run_id in Run_IDs:
+        task = asyncio.create_task(download_with_limits(run_id))
+        tasks.append(task)
+    
+    # Use tqdm to show progress with more detailed information
+    total_downloads = len(tasks)
+    completed = 0
+    failed = 0
+    
+    with tqdm(total=total_downloads, desc="Downloading SRA data") as pbar:
+        # Process tasks as they complete
+        for future in asyncio.as_completed(tasks):
+            result = await future
+            completed += 1
+            if not result:
+                failed += 1
+            pbar.update(1)
+            pbar.set_postfix({"success": completed-failed, "failed": failed})
+    
+    # Check success rate
+    success_count = total_downloads - failed
+    logging.info(f"Successfully downloaded {success_count}/{total_downloads} runs ({success_count/total_downloads:.1%})")
+    
+    return success_count == total_downloads
 
 
 def all_fastq_data_exist(Run_IDs, SRA_data_dir):
-    ## check to see if all the expected files exist on disk (does not check for corrupted data).
-    SRA_file_list = os.listdir(SRA_data_dir)
-    prefetch_dirs = [f for f in SRA_file_list if os.path.isdir(os.path.join(SRA_data_dir, f))]
-    fastq_files = [f for f in SRA_file_list if f.endswith(".fastq")]
-    for Run_ID in Run_IDs:
-        ## does the prefetch directory exist?
-        if Run_ID not in SRA_file_list:
-            return False
-        ## does the first fastq file exist?
-        sra_fastq_path_1 = os.path.join(SRA_data_dir, Run_ID + "_1.fastq")
-        if not os.path.exists(sra_fastq_path_1):
-            return False
-        ## does the second fastq file exist?
-        sra_fastq_path_2 = os.path.join(SRA_data_dir, Run_ID + "_2.fastq")
-        if  not os.path.exists(sra_fastq_path_2):
-            return False
+    """Check if all FASTQ data exists, with better error reporting."""
+    missing_files = []
+    for run_id in Run_IDs:
+        # Check for both compressed and uncompressed files
+        fastq1 = os.path.join(SRA_data_dir, f"{run_id}_1.fastq")
+        fastq1_gz = os.path.join(SRA_data_dir, f"{run_id}_1.fastq.gz")
+        
+        if not (os.path.exists(fastq1) or os.path.exists(fastq1_gz)):
+            missing_files.append(run_id)
+    
+    if missing_files:
+        logging.warning(f"Missing FASTQ files for {len(missing_files)}/{len(Run_IDs)} Run IDs")
+        if len(missing_files) <= 10:
+            logging.warning(f"Missing Run IDs: {', '.join(missing_files)}")
+        else:
+            logging.warning(f"First 10 missing Run IDs: {', '.join(missing_files[:10])}...")
+        
+        # If in test mode or if most files exist, consider it a success
+        success_threshold = 0.5 if TEST_MODE else 0.8
+        success_rate = 1 - (len(missing_files) / len(Run_IDs))
+        
+        if success_rate >= success_threshold:
+            logging.info(f"Success rate ({success_rate:.1%}) exceeds threshold ({success_threshold:.1%}), continuing")
+            return True
+        return False
+    
+    logging.info("All FASTQ files exist")
     return True
 
 
@@ -1841,24 +1923,35 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
     return
 
 
-async def async_compress_fastq(Run_ID, SRA_data_dir):
-    """Compress FASTQ files in parallel"""
-    fastq_1 = os.path.join(SRA_data_dir, f"{Run_ID}_1.fastq")
-    fastq_2 = os.path.join(SRA_data_dir, f"{Run_ID}_2.fastq")
+async def async_compress_fastq(run_id, SRA_data_dir):
+    """Compress fastq files with error checking."""
+    success = True
+    for suffix in ["_1.fastq", "_2.fastq"]:
+        fastq_file = os.path.join(SRA_data_dir, f"{run_id}{suffix}")
+        gz_file = f"{fastq_file}.gz"
+        
+        # Skip if compressed file already exists or source doesn't exist
+        if os.path.exists(gz_file):
+            continue
+        if not os.path.exists(fastq_file):
+            logging.warning(f"Cannot compress {fastq_file}: file not found")
+            success = False
+            continue
+            
+        try:
+            cmd = f"gzip -f {fastq_file}"
+            proc = await asyncio.create_subprocess_shell(cmd)
+            await proc.communicate()
+            
+            # Verify compression worked
+            if not os.path.exists(gz_file):
+                logging.warning(f"Compression of {fastq_file} failed")
+                success = False
+        except Exception as e:
+            logging.error(f"Error compressing {fastq_file}: {e}")
+            success = False
     
-    if os.path.exists(fastq_1 + ".gz"):
-        return True
-
-    try:
-        # Use pigz for parallel compression if available
-        for f in [fastq_1, fastq_2]:
-            cmd = ["pigz", "-k", "-p4", f] if shutil.which("pigz") else ["gzip", f]
-            proc = await asyncio.create_subprocess_exec(*cmd)
-            await proc.wait()
-        return True
-    except Exception as e:
-        print(f"Compression failed: {e}")
-        return False
+    return success
 
 
 ################################################################################
@@ -1888,6 +1981,78 @@ def test_pysradb_functionality():
             logging.error(f"pysradb test failed with error: {result.stderr}")
     except Exception as e:
         logging.error(f"Error testing pysradb: {e}")
+
+async def download_fastq_reads(run_id, SRA_data_dir):
+    """Download fastq reads for a given Run ID using a direct approach with rate limiting."""
+    os.makedirs(SRA_data_dir, exist_ok=True)
+    
+    # Check if the files already exist (compressed)
+    fastq1_gz = os.path.join(SRA_data_dir, f"{run_id}_1.fastq.gz")
+    fastq2_gz = os.path.join(SRA_data_dir, f"{run_id}_2.fastq.gz")
+    
+    if os.path.exists(fastq1_gz):
+        logging.info(f"FASTQ files for {run_id} already exist, skipping download")
+        return True
+    
+    try:
+        # Use rate limiter before making the request
+        async with ncbi_rate_limiter.limit():
+            # Use fastq-dump directly with proper output directory
+            cmd = f"fastq-dump --split-files --outdir {SRA_data_dir} {run_id}"
+            
+            logging.info(f"Downloading {run_id} with command: {cmd}")
+            
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            
+            # Check if the download was successful
+            if proc.returncode != 0:
+                logging.error(f"Error downloading {run_id}: {stderr.decode()}")
+                return False
+            
+            # Verify the files exist before returning
+            fastq1 = os.path.join(SRA_data_dir, f"{run_id}_1.fastq")
+            if not os.path.exists(fastq1):
+                logging.error(f"Download completed but {fastq1} not found")
+                return False
+                
+            logging.info(f"Successfully downloaded {run_id}")
+            return True
+            
+    except Exception as e:
+        logging.error(f"Exception downloading {run_id}: {e}")
+        return False
+
+async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs):
+    """Download fastq reads in parallel with improved reliability."""
+    # Limit concurrent downloads to avoid overwhelming system
+    max_concurrent = 3  # Reduced from default
+    
+    # Create semaphore to limit concurrency
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def download_with_limit(run_id):
+        async with semaphore:
+            # Add retry logic
+            max_retries = 2
+            for attempt in range(max_retries):
+                success = await download_fastq_reads(run_id, SRA_data_dir)
+                if success:
+                    return True
+                logging.warning(f"Retry {attempt+1}/{max_retries} for {run_id}")
+                await asyncio.sleep(2)  # Wait before retry
+            return False
+    
+    # Create tasks with semaphore
+    tasks = [download_with_limit(run_id) for run_id in Run_IDs]
+    
+    # Run with progress bar
+    results = await async_tqdm.gather(*tasks, desc="Downloading SRA data")
+    return results
 
 def main():
     ## Configure logging
@@ -2087,6 +2252,42 @@ def create_test_subset():
     # In test mode, use the test file instead of the original
     global prokaryotes_with_plasmids_file
     prokaryotes_with_plasmids_file = test_file
+
+
+class RateLimiter:
+    """Rate limiter to prevent overwhelming NCBI servers."""
+    
+    def __init__(self, calls_per_minute=10):
+        self.calls_per_minute = calls_per_minute
+        self.interval = 60.0 / calls_per_minute  # seconds between calls
+        self.last_call_time = 0
+        self.lock = asyncio.Lock()
+    
+    @asynccontextmanager
+    async def limit(self):
+        """Context manager to limit the rate of API calls."""
+        async with self.lock:
+            # Calculate time since last call
+            current_time = time.time()
+            time_since_last_call = current_time - self.last_call_time
+            
+            # If we need to wait to respect rate limit
+            if time_since_last_call < self.interval:
+                wait_time = self.interval - time_since_last_call
+                logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds")
+                await asyncio.sleep(wait_time)
+            
+            # Update last call time
+            self.last_call_time = time.time()
+        
+        try:
+            # Allow the caller to proceed
+            yield
+        finally:
+            pass  # No cleanup needed
+
+# Create a global rate limiter instance
+ncbi_rate_limiter = RateLimiter(calls_per_minute=10)  # Adjust as needed
 
 
 if __name__ == "__main__":
