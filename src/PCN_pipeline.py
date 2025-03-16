@@ -42,7 +42,8 @@ from contextlib import asynccontextmanager
 # Test mode configuration
 TEST_MODE = True  # Set to False for production run
 TEST_GENOME_COUNT = 1000  # Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 15  # Increase from 10 to 50 for better testing
+TEST_DOWNLOAD_LIMIT = 50  # Increase from 10 to 50 for better testing
+COMPRESS_FASTQ = False
 
 """
 TODO list:
@@ -78,110 +79,96 @@ GCF_014872735.1_ASM1487273v1
 ## Functions.
 
 def get_SRA_ID_from_RefSeqID(refseq_id):
-    ## datasets must be in $PATH.
+    """Fetch the SRA ID corresponding to a RefSeq accession ID."""
     logging.info(f"Getting SRA ID for {refseq_id}...")
-    logging.info(f"Running command: datasets summary genome accession {refseq_id}")
-    bash_command = f'datasets summary genome accession {refseq_id}'
-    cmd_output = subprocess.check_output(bash_command, shell=True)
-    json_output = cmd_output.decode('utf-8')
-    json_data = json.loads(json_output)
-    sra_id = "NA"
-    reports = json_data.get("reports")
-    if reports:
-        sample_ids = reports[0].get("assembly_info", {}).get("biosample", {}).get("sample_ids")
-        if sample_ids:
-            for sample_id in sample_ids:
-                if sample_id.get("db") == "SRA":
-                    sra_id = sample_id.get("value")
-                    break
-    return(sra_id)
+    bash_command = f"datasets summary genome accession {refseq_id}"
+
+    try:
+        cmd_output = subprocess.check_output(bash_command, shell=True, stderr=subprocess.STDOUT)
+        json_output = cmd_output.decode("utf-8")
+        json_data = json.loads(json_output)
+        
+        # Log the full response structure
+        logging.info(f"Full NCBI response structure for {refseq_id}:")
+        logging.info(json.dumps(json_data, indent=2))
+
+        sra_id = "NA"
+        reports = json_data.get("reports")
+        if reports:
+            sample_ids = reports[0].get("assembly_info", {}).get("biosample", {}).get("sample_ids")
+            if sample_ids:
+                for sample_id in sample_ids:
+                    if sample_id.get("db") == "SRA":
+                        sra_id = sample_id.get("value")
+                        break
+        return sra_id
+
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error fetching SRA ID for {refseq_id}: {e.output.decode()}")
+        return "NA"
 
 def fetch_Run_IDs_with_pysradb(sra_id):
-    """Fetch Run IDs with improved filtering for Illumina data only."""
+    """Fetch Run IDs for a given SRA ID, filtering strictly for Illumina WGS data with retry logic."""
     logging.info(f"Fetching Run IDs for {sra_id}...")
-    
-    try:
-        # Use pysradb to get metadata for the SRA ID
-        cmd = ["pysradb", "metadata", "--detailed", sra_id]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        output = result.stdout.strip()
-        
-        if not output:
-            logging.warning(f"No metadata found for SRA ID: {sra_id}")
-            return []
-        
-        # Parse the output to find Run IDs
-        lines = output.strip().split('\n')
-        if len(lines) <= 1:  # Only header, no data
-            logging.warning(f"No run data found for SRA ID: {sra_id}")
-            return []
-        
-        header = lines[0].split('\t')
-        
-        # Find the indices of relevant columns
+
+    pysradb_command = ["pysradb", "metadata", "--detailed", sra_id]
+    max_retries = 5
+    attempt = 0
+    pysra_command_worked = False
+
+    while attempt < max_retries:
         try:
-            run_idx = header.index('run_accession')
-            paired_idx = header.index('library_layout')
-            size_idx = header.index('total_size')
-            instrument_idx = header.index('instrument_model')  # Add this line
-        except ValueError as e:
-            logging.error(f"Error parsing pysradb output: {str(e)}")
-            return []
-        
-        run_ids = []
-        illumina_run_ids = []  # Separate list for Illumina runs
-        
-        for line in lines[1:]:
-            fields = line.split('\t')
-            if len(fields) <= max(run_idx, paired_idx, size_idx, instrument_idx):
-                continue
-                
-            run_id = fields[run_idx]
-            paired = fields[paired_idx] == "PAIRED"
-            
-            # Try to parse size, default to 0 if it fails
-            try:
-                size_mb = float(fields[size_idx]) / 1_000_000  # Convert to MB
-            except (ValueError, TypeError):
-                size_mb = 0
-                
-            instrument = fields[instrument_idx].upper()
-            
-            # Check if this is Illumina data
-            is_illumina = any(platform in instrument for platform in [
-                "ILLUMINA", "HISEQ", "MISEQ", "NEXTSEQ", "NOVASEQ"
-            ])
-            
-            logging.info(f"Found Run ID: {run_id} for SRA ID: {sra_id} (Paired: {paired}, Size: {size_mb:.1f} MB, Instrument: {instrument})")
-            
-            # Add to appropriate list
-            run_ids.append((run_id, paired, size_mb))
-            if is_illumina:
-                illumina_run_ids.append((run_id, paired, size_mb))
-        
-        # If we have Illumina runs, only use those
-        if illumina_run_ids:
-            logging.info(f"Found {len(illumina_run_ids)} Illumina runs out of {len(run_ids)} total runs")
-            selected_runs = illumina_run_ids
-        else:
-            logging.warning(f"No Illumina data found for SRA ID: {sra_id}")
-            return []
-        
-        # Sort by paired-end status (prefer paired) and then by size (prefer smaller for testing)
-        selected_runs.sort(key=lambda x: (-int(x[1]), x[2]))
-        
-        # Extract just the Run IDs
-        selected_run_ids = [run[0] for run in selected_runs]
-        
-        logging.info(f"Selected {len(selected_run_ids)} Run IDs for SRA ID: {sra_id}: {', '.join(selected_run_ids)}")
-        return selected_run_ids
-        
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error running pysradb for {sra_id}: {str(e)}")
+            result = subprocess.run(pysradb_command, capture_output=True, text=True, check=True)
+            output = result.stdout.strip()
+            if output:
+                pysra_command_worked = True
+                break
+        except subprocess.CalledProcessError as e:
+            logging.warning(f"Attempt {attempt+1}/{max_retries} failed for {sra_id}: {str(e)}")
+        attempt += 1
+        time.sleep(2)  # Small delay before retrying
+
+    if not pysra_command_worked:
+        logging.error(f"Failed to fetch metadata for {sra_id} after {max_retries} attempts.")
         return []
-    except Exception as e:
-        logging.error(f"Unexpected error fetching Run IDs for {sra_id}: {str(e)}")
+
+    # Parse the output to extract relevant metadata
+    lines = output.split("\n")
+    if len(lines) <= 1:  # No data, only header
+        logging.warning(f"No run data found for SRA ID: {sra_id}")
         return []
+
+    # Extract header information
+    header = lines[0].split("\t")
+    try:
+        run_idx = header.index("run_accession")
+        strategy_idx = header.index("library_strategy")
+        instrument_idx = header.index("instrument_model")
+    except ValueError as e:
+        logging.error(f"Error parsing pysradb output: {str(e)}")
+        return []
+
+    run_ids = []
+
+    for line in lines[1:]:
+        fields = line.split("\t")
+        if len(fields) <= max(run_idx, strategy_idx, instrument_idx):
+            continue
+
+        run_id = fields[run_idx]
+        library_strategy = fields[strategy_idx]
+        instrument_model = fields[instrument_idx].upper()
+
+        # Strict filtering: Only keep WGS + Illumina runs
+        if library_strategy == "WGS" and instrument_model == "ILLUMINA":
+            run_ids.append(run_id)
+
+    if not run_ids:
+        logging.warning(f"No Illumina WGS data found for SRA ID: {sra_id}")
+        return []
+
+    logging.info(f"Found {len(run_ids)} WGS Illumina runs for SRA ID: {sra_id}: {', '.join(run_ids)}")
+    return run_ids
 
 def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv):
     """Create a table mapping RefSeq IDs to SRA IDs and Run IDs."""
@@ -245,19 +232,13 @@ def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
         for i, line in enumerate(prok_with_plasmids_file_obj):
             if i == 0: continue  # skip the header
             
-            fields = line.strip().split("\t")
-            print(f"Fields: {fields}")  # Debugging: print fields
-            
-            ## TODO: Check table format
-                
+            fields = line.strip().split("\t")                
             # Get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs
             refseq_id = fields[-5].replace("GCA", "GCF")
-            print(f"RefSeq ID: {refseq_id}")  # Debugging: print RefSeq ID
             
             # Get the ftp_url field (3rd from end) and make sure we turn the GCA Genbank URL
             # into the GCF RefSeq FTP URL
             ftp_url = fields[-3].replace("GCA", "GCF")
-            print(f"FTP URL: {ftp_url}")  # Debugging: print FTP URL
             
             # Check for valid IDs and URLs (some rows have a '-' as a blank placeholder)
             if refseq_id.startswith("GCF") and refseq_id in ftp_url:
@@ -437,45 +418,6 @@ def get_Run_IDs_from_RunID_table(RunID_table_csv):
             return test_run_ids[:TEST_DOWNLOAD_LIMIT]
         return []
 
-
-async def async_prefetch(Run_ID, SRA_data_dir):
-    """Async prefetch with retries"""
-    prefetch_dir = os.path.join(SRA_data_dir, Run_ID)
-    if os.path.exists(prefetch_dir):
-        return True
-        
-    cmd = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
-    for attempt in range(5):
-        try:
-            proc = await asyncio.create_subprocess_exec(*cmd)
-            await proc.wait()
-            if proc.returncode == 0:
-                return True
-        except Exception as e:
-            print(f"Prefetch attempt {attempt+1} failed: {e}")
-            await asyncio.sleep(2 ** attempt)
-    return False
-
-async def async_fasterq_dump(Run_ID, SRA_data_dir):
-    """Async fasterq-dump with parallel processing"""
-    fastq_1 = os.path.join(SRA_data_dir, f"{Run_ID}_1.fastq")
-    fastq_2 = os.path.join(SRA_data_dir, f"{Run_ID}_2.fastq")
-    
-    if os.path.exists(fastq_1) and os.path.exists(fastq_2):
-        return True
-
-    cmd = ["fasterq-dump", "--threads", "4", "--progress", "--outdir", SRA_data_dir, Run_ID]
-    for attempt in range(3):
-        try:
-            proc = await asyncio.create_subprocess_exec(*cmd)
-            await proc.wait()
-            if proc.returncode == 0:
-                return True
-        except Exception as e:
-            print(f"Fasterq-dump attempt {attempt+1} failed: {e}")
-            await asyncio.sleep(5)
-    return False
-
 async def compress_fastq_file(fastq_path):
     """Compress a single FASTQ file using gzip."""
     try:
@@ -518,152 +460,45 @@ async def compress_fastq_file(fastq_path):
         logging.error(f"Exception compressing {fastq_path}: {str(e)}")
         return False
 
-async def compress_fastq_files_parallel(fastq_dir, max_concurrent=5):
-    """Compress all FASTQ files in a directory in parallel."""
-    # Find all uncompressed FASTQ files
-    fastq_files = glob.glob(f"{fastq_dir}/*.fastq")
-    
-    if not fastq_files:
-        logging.info("No FASTQ files to compress")
-        return True
-        
-    # Create semaphore to limit concurrent compressions
-    semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def compress_with_semaphore(file_path):
-        async with semaphore:
-            return await compress_fastq_file(file_path)
-    
-    # Create tasks for all compressions
-    tasks = [compress_with_semaphore(file) for file in fastq_files]
-    
-    # Use tqdm to track progress
-    with tqdm(total=len(tasks), desc="Compressing FASTQ files") as pbar:
-        results = []
-        for future in asyncio.as_completed(tasks):
-            result = await future
-            results.append(result)
-            pbar.update(1)
-    
-    # Check if all compressions were successful
-    success_count = sum(1 for r in results if r)
-    logging.info(f"Successfully compressed {success_count}/{len(fastq_files)} FASTQ files")
-    
-    return success_count == len(fastq_files)
-
-async def check_sra_id_exists(run_id):
-    """Check if an SRA ID exists and is accessible."""
-    try:
-        # Use prefetch with info flag to check if the ID exists
-        cmd = ["prefetch", "--info", run_id]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode() if stdout else ""
-        stderr_text = stderr.decode() if stderr else ""
-        
-        # Check if the ID exists based on prefetch output
-        if process.returncode == 0 and "not found" not in stderr_text.lower() and "error" not in stderr_text.lower():
-            logging.info(f"SRA ID {run_id} exists and is accessible")
-            return True
-        else:
-            # Try alternative method using pysradb if available
-            try:
-                import subprocess
-                result = subprocess.run(["pysradb", "metadata", run_id], 
-                                       capture_output=True, text=True, check=False)
-                if result.returncode == 0 and "not found" not in result.stderr.lower():
-                    logging.info(f"SRA ID {run_id} exists according to pysradb")
-                    return True
-            except Exception as inner_e:
-                logging.debug(f"Alternative check for {run_id} failed: {str(inner_e)}")
-                
-            logging.warning(f"SRA ID {run_id} not found or not accessible: {stderr_text}")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Error checking SRA ID {run_id}: {str(e)}")
-        return False
-
 async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=3, max_retries=3):
-    """Download FASTQ reads in parallel with improved error handling and retry logic."""
+    """Download FASTQ reads in parallel with retry logic and integrity checks."""
     os.makedirs(SRA_data_dir, exist_ok=True)
-    
-    # Reduce concurrency to avoid overwhelming the system
     semaphore = asyncio.Semaphore(max_concurrent)
-    
+
     async def download_with_semaphore(run_id):
         async with semaphore:
-            try:
-                return await download_fastq_reads(run_id, SRA_data_dir, max_retries)
-            except Exception as e:
-                logging.error(f"Unhandled error downloading {run_id}: {str(e)}")
-                return False
-    
+            return await download_fastq_reads(run_id, SRA_data_dir, max_retries=max_retries)
+
     total_downloads = len(Run_IDs)
     completed = 0
     failed = 0
+
+    tasks = [download_with_semaphore(run_id) for run_id in Run_IDs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    # Create tasks but don't start them all at once
-    tasks = []
-    for run_id in Run_IDs:
-        tasks.append(download_with_semaphore(run_id))
+    # Count successful downloads
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully downloaded {success_count}/{len(Run_IDs)} Run IDs")
     
-    with tqdm(total=total_downloads, desc="Downloading SRA data") as pbar:
-        results = []
-        for future in asyncio.as_completed(tasks):
-            try:
-                result = await future
-                results.append(result)
-                completed += 1
-                if not result:
-                    failed += 1
-                pbar.update(1)
-                pbar.set_postfix({"success": completed-failed, "failed": failed})
-            except Exception as e:
-                logging.error(f"Error in download task: {str(e)}")
-                failed += 1
-                pbar.update(1)
-                pbar.set_postfix({"success": completed-failed, "failed": failed})
-    
-    # Log the results
-    success_count = sum(1 for r in results if r)
-    if total_downloads > 0:
-        success_rate = success_count/total_downloads
-    else:
-        success_rate = 0
-    
-    logging.info(f"Successfully downloaded {success_count}/{total_downloads} runs ({success_rate:.1%})")
-    
-    # Consider the operation successful if at least one download succeeded
-    return success_count > 0
+    return success_count
 
 def all_fastq_data_exist(run_ids, output_dir, check_compressed=True):
     """Check if all FASTQ files exist for the given run IDs."""
     missing_run_ids = []
     
     for run_id in run_ids:
-        # Check for both compressed and uncompressed files
         extensions = ['.fastq']
         if check_compressed:
             extensions.append('.fastq.gz')
             
         files_found = False
         for ext in extensions:
-            # Check for paired-end files
             paired_files = [
                 os.path.join(output_dir, f"{run_id}_1{ext}"),
                 os.path.join(output_dir, f"{run_id}_2{ext}")
             ]
-            
-            # Check for single-end file
             single_file = os.path.join(output_dir, f"{run_id}{ext}")
-            
+
             if (os.path.exists(paired_files[0]) and os.path.exists(paired_files[1])) or os.path.exists(single_file):
                 files_found = True
                 break
@@ -675,7 +510,7 @@ def all_fastq_data_exist(run_ids, output_dir, check_compressed=True):
         logging.warning(f"Missing FASTQ files for {len(missing_run_ids)}/{len(run_ids)} Run IDs")
         logging.warning(f"First 10 missing Run IDs: {', '.join(missing_run_ids[:10])}...")
         return False
-    
+
     return True
 
 
@@ -2073,7 +1908,7 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
 
 def test_pysradb_functionality():
     """Test if pysradb is working correctly with a known SRA ID."""
-    test_sra_id = "SRS3928059"  
+    test_sra_id = "SRS7822362"  
     logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
     
     try:
@@ -2098,11 +1933,29 @@ def test_pysradb_functionality():
         logging.error(f"Error testing pysradb: {e}")
 
 async def download_fastq_reads(run_id, output_dir, max_retries=3):
-    """Download FASTQ files for a run ID with retry logic."""
+    """Download FASTQ files for a run ID with retry logic and optional compression."""
     logging.info(f"Downloading {run_id} with command: fasterq-dump --split-files --skip-technical --outdir {output_dir} --force --progress {run_id}")
     
     for attempt in range(max_retries):
         try:
+            # First prefetch the SRA data
+            logging.info(f"Prefetching {run_id} (attempt {attempt+1}/{max_retries})...")
+            prefetch_cmd = ["prefetch", run_id]
+            prefetch_process = await asyncio.create_subprocess_exec(
+                *prefetch_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            prefetch_stdout, prefetch_stderr = await prefetch_process.communicate()
+            
+            if prefetch_process.returncode != 0:
+                logging.error(f"Error prefetching {run_id} (attempt {attempt+1}/{max_retries}): {prefetch_stderr.decode()}")
+                await asyncio.sleep(2)
+                continue
+                
+            # Then use fasterq-dump to extract FASTQ
+            logging.info(f"Running fasterq-dump for {run_id} (attempt {attempt+1}/{max_retries})...")
             cmd = [
                 "fasterq-dump",
                 "--split-files",
@@ -2110,13 +1963,8 @@ async def download_fastq_reads(run_id, output_dir, max_retries=3):
                 "--outdir", output_dir,
                 "--force",
                 "--progress",
-                "--details",
                 run_id
             ]
-            
-            # Add compression directly in fasterq-dump to avoid separate step
-            if shutil.which("pigz"):  # Check if pigz is available
-                cmd.extend(["--gzip"])
             
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -2125,43 +1973,28 @@ async def download_fastq_reads(run_id, output_dir, max_retries=3):
             )
             
             stdout, stderr = await process.communicate()
-            stdout_text = stdout.decode() if stdout else ""
-            stderr_text = stderr.decode() if stderr else ""
             
             if process.returncode != 0:
-                logging.error(f"Error downloading {run_id} (attempt {attempt+1}/{max_retries}): {stderr_text}")
-                # Try to provide more diagnostic information
-                if "permission denied" in stderr_text.lower():
-                    logging.error(f"Permission denied for {run_id}. Check your NCBI credentials.")
-                elif "not found" in stderr_text.lower():
-                    logging.error(f"Run ID {run_id} not found in SRA database.")
-                    return False  # Don't retry if the run doesn't exist
-                elif "network" in stderr_text.lower():
-                    logging.error(f"Network error while downloading {run_id}. Will retry.")
-                elif "input/output error" in stderr_text.lower():
-                    logging.error(f"I/O error while downloading {run_id}. Will retry after delay.")
-                    await asyncio.sleep(5)  # Add delay before retry on I/O errors
-                else:
-                    await asyncio.sleep(2)  # General delay before retry
-                continue  # Try again
+                logging.error(f"Error downloading {run_id} (attempt {attempt+1}/{max_retries}): {stderr.decode()}")
+                await asyncio.sleep(2)
+                continue
             
-            # Verify files were created
-            expected_files = glob.glob(f"{output_dir}/{run_id}*.fastq*")
-            if not expected_files:
-                logging.error(f"No FASTQ files found for {run_id} after download (attempt {attempt+1}/{max_retries})")
-                await asyncio.sleep(2)  # Delay before retry
-                continue  # Try again
-                
-            logging.info(f"Successfully downloaded {run_id}")
+            # **Optional Compression Step**
+            if COMPRESS_FASTQ:
+                logging.info(f"Compressing FASTQ files for {run_id}...")
+                for suffix in ["_1.fastq", "_2.fastq"]:
+                    fastq_path = os.path.join(output_dir, f"{run_id}{suffix}")
+                    if os.path.exists(fastq_path):
+                        await compress_fastq_file(fastq_path)
+            else:
+                logging.info(f"Skipping compression for {run_id}")
+
+            logging.info(f"Successfully downloaded and processed {run_id}")
             return True
             
         except Exception as e:
             logging.error(f"Exception downloading {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
-            if "input/output error" in str(e).lower():
-                logging.error(f"I/O error detected. Waiting before retry...")
-                await asyncio.sleep(10)  # Longer delay for I/O errors
-            else:
-                await asyncio.sleep(5)
+            await asyncio.sleep(2)
     
     logging.error(f"Failed to download {run_id} after {max_retries} attempts")
     return False
@@ -2324,6 +2157,7 @@ def main():
         SRA_download_start_time = time.time()
         
         try:
+            #Make sure the source == GENOMIC and datatype=ILLUMINA (check with Rohan code)
             # Get Run IDs with caching
             Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
             logging.info(f"Found {len(Run_IDs)} Run IDs to download")
@@ -2438,87 +2272,7 @@ class RateLimiter:
 # Create a global rate limiter instance
 ncbi_rate_limiter = RateLimiter(calls_per_minute=10)  # Adjust as needed
 
-async def async_compress_fastq(run_id, SRA_data_dir):
-    """Compress fastq files with improved error checking for both paired and single-end files."""
-    success = True
-    
-    # Check for paired-end files
-    paired_files = [
-        os.path.join(SRA_data_dir, f"{run_id}_1.fastq"),
-        os.path.join(SRA_data_dir, f"{run_id}_2.fastq")
-    ]
-    
-    # Check for single-end file
-    single_file = os.path.join(SRA_data_dir, f"{run_id}.fastq")
-    
-    # Determine which files exist
-    files_to_compress = []
-    
-    if os.path.exists(paired_files[0]):
-        files_to_compress.append(paired_files[0])
-    if os.path.exists(paired_files[1]):
-        files_to_compress.append(paired_files[1])
-    if os.path.exists(single_file):
-        files_to_compress.append(single_file)
-    
-    if not files_to_compress:
-        logging.warning(f"Cannot compress files for {run_id}: no FASTQ files found")
-        return False
-    
-    # Compress existing files
-    for file in files_to_compress:
-        try:
-            # Use pigz if available (parallel gzip), otherwise use gzip
-            if shutil.which("pigz"):
-                cmd = ["pigz", "-f", file]
-            else:
-                cmd = ["gzip", "-f", file]
-                
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            # Verify compression worked
-            gz_file = f"{file}.gz"
-            if not os.path.exists(gz_file):
-                logging.warning(f"Compression of {file} failed")
-                success = False
-        except Exception as e:
-            logging.error(f"Error compressing {file}: {str(e)}")
-            success = False
-    
-    return success
 
-def process_genome(refseq_id, output_file, writer):
-    """Process a single genome to find SRA and Run IDs with Illumina data."""
-    logging.info(f"Processing genome: {refseq_id}")
-    
-    # Get SRA ID
-    sra_id = get_SRA_ID_from_RefSeqID(refseq_id)
-    
-    if sra_id == "NA":
-        logging.warning(f"No SRA ID found for {refseq_id}")
-        return False
-    
-    logging.info(f"Found SRA ID: {sra_id} for {refseq_id}")
-    
-    # Get Run IDs (this will now filter for Illumina data)
-    run_ids = fetch_Run_IDs_with_pysradb(sra_id)
-    
-    if not run_ids:
-        logging.warning(f"No suitable Illumina Run IDs found for {refseq_id} (SRA ID: {sra_id})")
-        return False
-    
-    # Write entries to the output file
-    for run_id in run_ids:
-        writer.writerow([refseq_id, sra_id, run_id])
-        logging.info(f"Added entry: {refseq_id}, {sra_id}, {run_id}")
-    
-    return True
 
 async def validate_sra_download(run_id):
     """Validate the integrity of downloaded SRA data using vdb-validate."""
@@ -2549,166 +2303,6 @@ async def validate_sra_download(run_id):
             
     except Exception as e:
         logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
-        return False
-
-async def download_and_process_run_id(run_id, output_dir, semaphore, progress_bar):
-    """Download, validate, and process a single Run ID with integrated compression."""
-    async with semaphore:
-        try:
-            # Check if this Run ID exists in SRA
-            exists = await check_sra_exists(run_id)
-            if not exists:
-                logging.warning(f"SRA ID {run_id} does not exist or is not accessible")
-                progress_bar.update(1)
-                return False
-                
-            logging.info(f"SRA ID {run_id} exists according to pysradb")
-            
-            # Prefetch the SRA data
-            prefetch_success = await prefetch_sra(run_id)
-            if not prefetch_success:
-                logging.warning(f"Failed to prefetch {run_id}")
-                progress_bar.update(1)
-                return False
-                
-            # Validate the downloaded SRA data
-            validation_success = await validate_sra_download(run_id)
-            if not validation_success:
-                logging.warning(f"Downloaded SRA data for {run_id} failed validation")
-                progress_bar.update(1)
-                return False
-            
-            # Download FASTQ files with built-in compression
-            download_success = await download_fastq_with_compression(run_id, output_dir)
-            
-            progress_bar.update(1)
-            return download_success
-            
-        except Exception as e:
-            logging.error(f"Error processing {run_id}: {str(e)}")
-            progress_bar.update(1)
-            return False
-
-async def download_fastq_with_compression(run_id, output_dir):
-    """Download and compress FASTQ files in a single step."""
-    logging.info(f"Downloading and compressing FASTQ for {run_id}...")
-    
-    try:
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Use fasterq-dump with built-in compression
-        cmd = [
-            "fasterq-dump", 
-            "--split-files",  # Split into _1 and _2 for paired-end
-            "--threads", "4",  # Use multiple threads
-            "--gzip",         # Compress output files
-            "--outdir", output_dir,
-            "--prefetch",
-            run_id
-        ]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode() if stdout else ""
-        stderr_text = stderr.decode() if stderr else ""
-        
-        # Check if download was successful
-        if process.returncode == 0:
-            # Verify files exist
-            expected_files = []
-            
-            # Check for both paired-end and single-end possibilities
-            paired_files = [
-                os.path.join(output_dir, f"{run_id}_1.fastq.gz"),
-                os.path.join(output_dir, f"{run_id}_2.fastq.gz")
-            ]
-            single_file = os.path.join(output_dir, f"{run_id}.fastq.gz")
-            
-            if os.path.exists(paired_files[0]) and os.path.exists(paired_files[1]):
-                expected_files.extend(paired_files)
-            elif os.path.exists(single_file):
-                expected_files.append(single_file)
-                
-            if expected_files:
-                logging.info(f"Successfully downloaded and compressed FASTQ for {run_id}")
-                return True
-            else:
-                logging.warning(f"No FASTQ files found after download for {run_id}")
-                return False
-        else:
-            error_msg = stderr_text.strip() or f"fasterq-dump returned code {process.returncode}"
-            logging.warning(f"Failed to download FASTQ for {run_id}: {error_msg}")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Error downloading FASTQ for {run_id}: {str(e)}")
-        return False
-
-async def check_sra_exists(run_id):
-    """Check if an SRA run ID exists and is accessible."""
-    logging.info(f"Checking if SRA ID {run_id} exists...")
-    
-    try:
-        # Use pysradb to check if the run exists
-        cmd = ["pysradb", "metadata", run_id]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode() if stdout else ""
-        
-        # If we get a valid output with more than just a header, the run exists
-        lines = stdout_text.strip().split('\n')
-        if len(lines) > 1 and run_id in stdout_text:
-            logging.info(f"SRA ID {run_id} exists and is accessible")
-            return True
-        else:
-            logging.warning(f"SRA ID {run_id} does not exist or is not accessible")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Error checking if SRA ID {run_id} exists: {str(e)}")
-        return False
-
-async def prefetch_sra(run_id):
-    """Prefetch SRA data for a run ID."""
-    logging.info(f"Prefetching SRA data for {run_id}...")
-    
-    try:
-        # Use prefetch to download the SRA data
-        cmd = ["prefetch", run_id]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode() if stdout else ""
-        stderr_text = stderr.decode() if stderr else ""
-        
-        # Check if prefetch was successful
-        if process.returncode == 0:
-            logging.info(f"Successfully prefetched SRA data for {run_id}")
-            return True
-        else:
-            error_msg = stderr_text.strip() or f"prefetch returned code {process.returncode}"
-            logging.warning(f"Failed to prefetch SRA data for {run_id}: {error_msg}")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Error prefetching SRA data for {run_id}: {str(e)}")
         return False
 
 if __name__ == "__main__":
