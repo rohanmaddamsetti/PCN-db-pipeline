@@ -29,6 +29,7 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
 - pysradb
 - ncbi-datasets-cli
 - Breseq
+- Themisto
 
 ### Hardware
 - Recommended: Duke Compute Cluster (DCC)
@@ -48,7 +49,7 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
    wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
    ```
 
-3. Filter genomes with chromosomes and plasmids:
+3. Filter for complete genome and plasmids:
    ```bash
    (head -n 1 data/prokaryotes.txt && grep "plasmid" data/prokaryotes.txt | grep "chromosome") > results/prokaryotes-with-chromosomes-and-plasmids.txt
    ```
@@ -62,7 +63,45 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
    conda install -c conda-forge ncbi-datasets-cli
    ```
 
-5. Install SRA-Toolkit:
+5. Using Docker (Recommended for Testing):
+   ```bash
+   # Build the Docker image
+   docker build -t pcn-pipeline:latest .
+
+   # Run the container with mounted volumes for data persistence
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             pcn-pipeline:latest
+
+   # To run in test mode (default)
+   # This will process a smaller subset of genomes
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e TEST_MODE=True \
+             -e TEST_GENOME_COUNT=1000 \
+             -e TEST_DOWNLOAD_LIMIT=50 \
+             pcn-pipeline:latest
+
+   # To run in production mode
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e TEST_MODE=False \
+             pcn-pipeline:latest
+
+   # To disable FASTQ compression
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e COMPRESS_FASTQ=False \
+             pcn-pipeline:latest
+   ```
+
+   Notes:
+   - The `-v` flags create persistent volumes, so your data and results are saved even after the container stops
+   - Environment variables can be combined as needed
+   - Data will be stored in ./data and results in ./results on your host machine
+   - First run may take longer as it downloads and processes reference data
+
+6. Install SRA-Toolkit:
    - On DCC: `module load SRA-Toolkit`
    - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
 
