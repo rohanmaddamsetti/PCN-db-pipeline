@@ -2,6 +2,7 @@
 
 A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Requirements](#requirements)
@@ -9,6 +10,7 @@ A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 4. [Running the Pipeline](#running-the-pipeline)
 5. [Expected Output](#expected-output)
 6. [Performance](#performance)
+
 
 ## Overview
 
@@ -18,6 +20,7 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
 - Themisto for pseudoalignment
 - Kallisto for transcript quantification (not critical for PCN estimation, used for control experiments)
 - Breseq for mutation analysis (not critical for PCN estimation, used for control experiments)
+
 
 ## Requirements
 
@@ -74,7 +77,21 @@ Then, copy the source code in this github repository into the src/ directory for
    conda install -c conda-forge ncbi-datasets-cli
    ```
 
-5. Using Docker (Recommended for Testing):
+5. Install SRA-Toolkit:
+   - On DCC: `module load SRA-Toolkit`
+   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
+
+
+## Running the Pipeline
+
+   ```bash
+   conda activate PCNdb_env  
+   cd src/  
+   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+   ```
+
+
+## Using Docker (Recommended by Irida for testing):
    ```bash
    # Build the Docker image
    docker build -t pcn-pipeline:latest .
@@ -112,18 +129,6 @@ Then, copy the source code in this github repository into the src/ directory for
    - Data will be stored in ./data and results in ./results on your host machine
    - First run may take longer as it downloads and processes reference data
 
-6. Install SRA-Toolkit:
-   - On DCC: `module load SRA-Toolkit`
-   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
-
-## Running the Pipeline
-
-1. Copy source code to `src/` directory
-2. Run the pipeline:
-   ```bash
-   cd src/  
-   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
-   ```
 
 ## Expected Output
 
@@ -135,6 +140,7 @@ The pipeline generates:
    - `results/NCBI-replicon_lengths.csv`
    - `results/kallisto-replicon_copy_numbers.csv`
    - `results/themisto-replicon-read-counts.csv`  
+
 
 ## Performance
 
