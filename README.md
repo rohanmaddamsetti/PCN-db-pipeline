@@ -60,21 +60,24 @@ Then, copy the source code in this github repository into the src/ directory for
 
 2. Download required data:
    ```bash
-   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt ## on linux
+   curl https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt > data/prokaryotes.txt ## on mac and linux
    ```
 
 3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_*) to RefSeq Accessions (GCF_*).
    ```bash
-   grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed -i 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
+   grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
    ```
 
-4. Set up conda environment:
+4. Set up conda environment and install python dependencies:
    ```bash
    conda create --name PCNdb_env --clone base
    conda activate PCNdb_env
    pip install pysradb biopython
    conda install -c bioconda kallisto breseq
    conda install -c conda-forge ncbi-datasets-cli
+   pip install HTSeq
+   pip install beautifulsoup4
    ```
 
 5. Install SRA-Toolkit:
@@ -116,11 +119,6 @@ Then, copy the source code in this github repository into the src/ directory for
              -e TEST_MODE=False \
              pcn-pipeline:latest
 
-   # To enable FASTQ compression
-   docker run -v $(pwd)/data:/app/data \
-             -v $(pwd)/results:/app/results \
-             -e COMPRESS_FASTQ=True \
-             pcn-pipeline:latest
    ```
 
    Notes:
