@@ -1,49 +1,155 @@
 # PCN-db-pipeline by Rohan Maddamsetti, Maggie Wilson, and Irida Shyti.
-## Requirements: biopython, kallisto, SRA-Toolkit, pysradb, and ncbi-datasets-cli
 
-### This program can either be run locally or on Duke Compute Cluster (DCC). DCC is suggested to use due to the large amount of data that is downloaded from the thousands of samples. 
+A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 
-### Make a top-level directory with three directories inside, named "data", "results", and "src". Now copy all source code files in this repository into "src".
+## Table of Contents
+1. [Overview](#overview)
+2. [Requirements](#requirements)
+3. [Setup](#setup)
+4. [Running the Pipeline](#running-the-pipeline)
+5. [Expected Output](#expected-output)
+6. [Performance](#performance)
 
-#### The following file needs to be downloaded into the data/ directory.
-#### data/prokaryotes.txt should be downloaded from: https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+## Overview
 
-#### results/prokaryotes-with-chromosomes-and-plasmids.txt should then be generated with the following command (run from src/ directory):
-(head -n 1 ../data/prokaryotes.txt && grep "plasmid" ../data/prokaryotes.txt | grep "chromosome") > ../results/prokaryotes-with-chromosomes-and-plasmids.txt  
+This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
+- NCBI genome data
+- SRA sequencing data
+- Themisto for pseudoalignment
+- Kallisto for transcript quantification (not critical for PCN estimation, used for control experiments)
+- Breseq for mutation analysis (not critical for PCN estimation, used for control experiments)
 
-This command ensures that every genome has both an annotated chromosome and at least one annotated plasmid.
+## Requirements
 
+### Software
+- Python 3.10+
+- Biopython
+- SRA-Toolkit
+- pysradb
+- ncbi-datasets-cli
+- Themisto
+- Breseq
+- Kallisto
+
+### Hardware
+- Recommended: Duke Compute Cluster (DCC)
+- Storage: ~15TB for raw sequencing data
+- Memory: 16GB minimum
+- Time: ~2 weeks for full pipeline, mainly spent for the Illumina short-read data download.
+
+This pipeline can be run locally or on Duke Compute Cluster (DCC).  
+DCC or your high-performance computing cluster (HPC) is recommended,  
+due to the large amount of FASTQ sequencing data downloaded for PCN estimation.  
+
+
+## Setup
+
+1. Create project structure by downloading or cloning this github repository.
+Alternatively, create a new top-level project directory
+with containing src/, data/, results/ directories.
+Then, copy the source code in this github repository into the src/ directory for your project.
+
+   ```bash
+   mkdir my-test-PCN-project
+   cd my-test-PCN-project
+   mkdir -p {data,results,src}
+   ```
+
+2. Download required data:
+   ```bash
+   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt
+   ```
+
+3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_*) to RefSeq Accessions (GCF_*).
+   ```bash
+   grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed -i 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
+   ```
+
+4. Set up conda environment:
+   ```bash
+   conda create --name PCNdb_env --clone base
+   conda activate PCNdb_env
+   pip install pysradb biopython
+   conda install -c bioconda kallisto breseq
+   conda install -c conda-forge ncbi-datasets-cli
+   ```
+
+5. Using Docker (Recommended for Testing):
+   ```bash
+   # Build the Docker image
+   docker build -t pcn-pipeline:latest .
+
+   # Run the container with mounted volumes for data persistence
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             pcn-pipeline:latest
+
+   # To run in test mode (default)
+   # This will process a smaller subset of genomes
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e TEST_MODE=True \
+             -e TEST_GENOME_COUNT=1000 \
+             -e TEST_DOWNLOAD_LIMIT=50 \
+             pcn-pipeline:latest
+
+   # To run in production mode
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e TEST_MODE=False \
+             pcn-pipeline:latest
+
+   # To enable FASTQ compression
+   docker run -v $(pwd)/data:/app/data \
+             -v $(pwd)/results:/app/results \
+             -e COMPRESS_FASTQ=True \
+             pcn-pipeline:latest
+   ```
+
+   Notes:
+   - The `-v` flags create persistent volumes, so your data and results are saved even after the container stops
+   - Environment variables can be combined as needed
+   - Data will be stored in ./data and results in ./results on your host machine
+   - First run may take longer as it downloads and processes reference data
+
+6. Install SRA-Toolkit:
+   - On DCC: `module load SRA-Toolkit`
+   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
+
+## Running the Pipeline
+
+1. Copy source code to `src/` directory
+2. Run the pipeline:
+   ```bash
+   cd src/  
+   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+   ```
+
+## Expected Output
+
+The pipeline generates:
+1. Reference genomes in `data/NCBI-reference-genomes/`
+2. SRA data in `data/SRA/`
+3. Analysis results:
+   - `results/PIRA-PCN-estimates.csv`
+   - `results/NCBI-replicon_lengths.csv`
+   - `results/kallisto-replicon_copy_numbers.csv`
+   - `results/themisto-replicon-read-counts.csv`  
+
+## Performance
+
+| Stage | Time Estimate | Data Size |
+|-------|---------------|-----------|
+| Reference Genome Download | ~1-2 days | ~50GB |
+| SRA Data Download | ~12 days | ~15TB |
+| Full Pipeline | ~2 weeks | ~15TB |
+
+Note: Run the full pipeline in the `/work` directory on DCC since 15TB+ of disk space is needed.  
+
+
+Note 2 (DELETE ME IF NOT LONGER RELEVANT):
 SRA data for ~6000 genomes was downloaded, but only have about ~4500 reference genomes. to understand this discrepancy, I ran:
+``` bash
 cd ../data/NCBI-reference-genomes
 ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-genome-ids.txt
-
-
-### Expected Output:
-#### The first steps of this pipeline, convert these sample IDs into run accession IDs and create the reference genome path. Two txt files, a table with run accession IDs and a list of the genome paths  will be created. Then, the sample's reference genome will be downloaded if a run accession ID is present, these genomes will be downloaded into the ref-genomes folder in results. There should be 4,540 genomes downloaded, as that is the number of samples that have a run ID.
-#### A metadata csv is then created, a master list of all the samples were are downloading data for. Next, fastq files are downloaded for each run ID and put into the SRA folder in results.
-#### The next several functions parse through the SRA and reference genomes using kallisto and themisto.
-#### Lastly the final tables of results are created as "PIRA-PCN-estimates.csv", and "NCBI-replicon_lengths.csv".
-
-## How to run on DCC or locally.
-#### create a new conda environment (here I clone the base environment):
-##### conda create --name PCNdb_env --clone base
-##### conda activate PCNdb_env
-#### install pysradb and biopython in this environment using pip:
-##### pip install pysradb
-##### pip install biopython
-#### install kallisto and ncbi-datasets-cli in this new environment
-##### conda install bioconda::kallisto
-##### conda install conda-forge::ncbi-datasets-cli
-##### conda install bioconda::breseq
-
-
-#### You will then need to load the SRA-Toolkit module that is available on DCC:
-##### module load SRA-Toolkit
-#### alternatively, install a pre-built binary of SRA-Toolkit on your machine from here: https://github.com/ncbi/sra-tools
-
-### This will take ~2 weeks to run on DCC.
-
-### The Illumina data download (stage 3) takes 281 hours (12 days) to download 15 TB of raw sequencing data from NCBI Short Read Archive (SRA).  
-
-### sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
-#### Use .../work, as ~15 terabytes will be downloaded.
+```
