@@ -137,7 +137,7 @@ def test_pysradb_functionality():
         logging.error(f"Error testing pysradb: {e}")
     return
 
-    
+
 def fetch_Run_IDs_with_pysradb(sra_id):
     """Fetch Run IDs for a given SRA ID, filtering strictly for Illumina WGS data with retry logic."""
     logging.info(f"Fetching Run IDs for {sra_id}...")
@@ -239,9 +239,6 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_cs
                 if SRA_ID != "NA":
                     logging.info(f"Found SRA ID: {SRA_ID} for {RefSeq_ID}")
                     Run_IDs = fetch_Run_IDs_with_pysradb(SRA_ID)
-
-                    print("WORKING HERE")
-                    print(Run_IDs)
                     
                     if Run_IDs:
                         for Run_ID in Run_IDs:
