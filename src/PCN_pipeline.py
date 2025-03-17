@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-PCN_pipeline.py by Rohan Maddamsetti and Maggie Wilson.
+PCN_pipeline.py by Rohan Maddamsetti, Maggie Wilson, and Irida Shyti.
 
 For this pipeline to work, ncbi datasets, pysradb, kallisto, themisto, minimap2, and breseq 0.39+ must be in the $PATH.
 On the Duke Compute Cluster (DCC), run the following to get these programs into the path:
@@ -35,6 +35,19 @@ import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
 
+## imports for parallelization written by Irida.
+from tqdm.asyncio import tqdm as async_tqdm
+import asyncio
+import shutil
+from contextlib import asynccontextmanager
+
+COMPRESS_FASTQ = False
+# Test mode configuration
+TEST_MODE = False  # Set to True for testing
+TEST_GENOME_COUNT = 1000  # Number of genomes to process
+TEST_DOWNLOAD_LIMIT = 50  # Increase from 10 to 50 for better testing
+
+
 """
 TODO list:
 
@@ -62,8 +75,6 @@ and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
 Additional notes: the following breseq runs did not finish within 24h with 16GB of memory and 1 core:
 GCF_000025625.1_ASM2562v1
 GCF_014872735.1_ASM1487273v1
-
-
 """
 
 
