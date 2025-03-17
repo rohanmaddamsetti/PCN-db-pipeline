@@ -41,12 +41,10 @@ import asyncio
 import shutil
 from contextlib import asynccontextmanager
 
-COMPRESS_FASTQ = False
 # Test mode configuration
-TEST_MODE = False  # Set to True for testing
+TEST_MODE = True  # Set to True for testing
 TEST_GENOME_COUNT = 1000  # Number of genomes to process
 TEST_DOWNLOAD_LIMIT = 50  # Increase from 10 to 50 for better testing
-
 
 """
 TODO list:
@@ -82,101 +80,216 @@ GCF_014872735.1_ASM1487273v1
 ## Functions.
 
 def get_SRA_ID_from_RefSeqID(refseq_id):
+    """Fetch the SRA ID corresponding to a RefSeq accession ID."""
+    logging.info(f"Getting SRA ID for {refseq_id}...")
     ## datasets must be in $PATH.
-    bash_command = f'datasets summary genome accession {refseq_id}'
-    cmd_output = subprocess.check_output(bash_command, shell=True)
-    json_output = cmd_output.decode('utf-8')
-    json_data = json.loads(json_output)
-    sra_id = "NA"
-    reports = json_data.get("reports")
-    if reports:
-        sample_ids = reports[0].get("assembly_info", {}).get("biosample", {}).get("sample_ids")
-        if sample_ids:
-            for sample_id in sample_ids:
-                if sample_id.get("db") == "SRA":
-                    sra_id = sample_id.get("value")
-                    break
-    return(sra_id)
+    bash_command = f"datasets summary genome accession {refseq_id}"
+
+    try:
+        cmd_output = subprocess.check_output(bash_command, shell=True, stderr=subprocess.STDOUT)
+        json_output = cmd_output.decode("utf-8")
+        json_data = json.loads(json_output)
+        
+        # Log the full response structure
+        logging.info(f"Full NCBI response structure for {refseq_id}:")
+        logging.info(json.dumps(json_data, indent=2))
+
+        sra_id = "NA"
+        reports = json_data.get("reports")
+        if reports:
+            sample_ids = reports[0].get("assembly_info", {}).get("biosample", {}).get("sample_ids")
+            if sample_ids:
+                for sample_id in sample_ids:
+                    if sample_id.get("db") == "SRA":
+                        sra_id = sample_id.get("value")
+                        break
+        return sra_id
+
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error fetching SRA ID for {refseq_id}: {e.output.decode()}")
+        return "NA"
 
 
-def fetch_Run_IDs_with_pysradb(sra_id):
+def test_pysradb_functionality():
+    """Test if pysradb is working correctly with a known SRA ID."""
+    test_sra_id = "SRS7822362"  
+    logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
     
+    try:
+        # Run the command directly
+        cmd = f"pysradb metadata {test_sra_id}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            logging.info(f"pysradb test successful. Output:\n{result.stdout}")
+            
+            # Try to parse the output
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                logging.info(f"Found {len(lines)-1} potential Run IDs")
+                for line in lines[1:]:
+                    logging.info(f"Potential Run ID line: {line}")
+            else:
+                logging.warning("No data rows in pysradb output")
+        else:
+            logging.error(f"pysradb test failed with error: {result.stderr}")
+    except Exception as e:
+        logging.error(f"Error testing pysradb: {e}")
+    return
+
+    
+def fetch_Run_IDs_with_pysradb(sra_id):
+    """Fetch Run IDs for a given SRA ID, filtering strictly for Illumina WGS data with retry logic."""
+    logging.info(f"Fetching Run IDs for {sra_id}...")
+
     ## pysradb must be in $PATH.
-    pysradb_command = f'pysradb metadata {sra_id}'
-    pysradb_attempts = 5
+    pysradb_command = ["pysradb", "metadata", "--detailed", sra_id]
+    max_retries = 5
+    attempt = 0
     pysra_command_worked = False
-    while pysradb_attempts:
+
+    while attempt < max_retries:
         try:
-            pysradb_output = subprocess.check_output(pysradb_command, shell=True)
-            ## assuming the previous line worked--
-            pysradb_attempts = 0
-            pysra_command_worked = True
-        except subprocess.CalledProcessError:
-            pysradb_attempts -= 1
-    ## initialize an empty list of run_ids for this sra_id.
-    run_accessions = list()
-    ## check to see if pysradb_output is meaningful.
-    if pysra_command_worked:
-        pysradb_output_str = pysradb_output.decode('utf-8')
-        # Splits the metadata of the SRA ID into respective rows. 
-        # And isolates the rows that use the Illumina instrument.
-        rows = pysradb_output_str.strip().split('\n')
-        run_accessions = list()
-        for i, row in enumerate(rows):
-            if i == 0: continue ## skip the header
-            fields = row.split("\t")
-            try:
-                study_accession, study_title, experiment_accession, experiment_title, experiment_desc, organism_taxid, organism_name, library_name, library_strategy, library_source, library_selection, library_layout, sample_accession, sample_title, instrument, instrument_model, instrument_model_desc, total_spots, total_size, run_accession, run_total_spots, run_total_bases = fields
-                int_total_size = int(total_size)
-            except ValueError: ## if either the number of fields is wrong, or if the typecast fails (say if total_size == "<NA>"),  then skip this run_accession.
-                continue
-            ## if there is data associated with this accession (total_size > 0),
-            ## this is Illumina WGS data, and the run_accession is valid, then add to the list of run_accessions.
-            if int_total_size > 0 and library_strategy == "WGS" and instrument_model_desc == "ILLUMINA" and run_accession != "nan":
-                run_accessions.append(run_accession)
-    return(run_accessions)
+            result = subprocess.run(pysradb_command, capture_output=True, text=True, check=True)
+            output = result.stdout.strip()
+            if output:
+                pysra_command_worked = True
+                break
+        except subprocess.CalledProcessError as e:
+            logging.warning(f"Attempt {attempt+1}/{max_retries} failed for {sra_id}: {str(e)}")
+        attempt += 1
+        time.sleep(2)  # Small delay before retrying
+
+    if not pysra_command_worked:
+        logging.error(f"Failed to fetch metadata for {sra_id} after {max_retries} attempts.")
+        return []
+
+    # Parse the output to extract relevant metadata
+    lines = output.split("\n")
+    if len(lines) <= 1:  # No data, only header
+        logging.warning(f"No run data found for SRA ID: {sra_id}")
+        return []
+
+    # Extract header information
+    header = lines[0].split("\t")
+    try:
+        run_idx = header.index("run_accession")
+        strategy_idx = header.index("library_strategy")
+        instrument_idx = header.index("instrument_model")
+        total_size_idx = header.index("total_size")
+    except ValueError as e:
+        logging.error(f"Error parsing pysradb output: {str(e)}")
+        return []
+
+    run_ids = []
+
+    for line in lines[1:]:
+        fields = line.split("\t")
+        if len(fields) <= max(run_idx, strategy_idx, instrument_idx, total_size_idx):
+            continue
+
+        run_id = fields[run_idx]
+        library_strategy = fields[strategy_idx]
+        instrument_model = fields[instrument_idx].upper()
+        total_size = fields[total_size_idx]
+        int_total_size = int(total_size)
+
+        ## If there is data associated with this accession (total_size > 0), the run_accession is valid,
+        ##and  this is Illumina WGS data, then add to the list of run_accessions.
+        if int_total_size > 0 and run_accession != "nan" and library_strategy == "WGS" and instrument_model == "ILLUMINA":
+            run_ids.append(run_id)
+
+    if not run_ids:
+        logging.warning(f"No Illumina WGS data found for SRA ID: {sra_id}")
+        return []
+
+    logging.info(f"Found {len(run_ids)} WGS Illumina runs for SRA ID: {sra_id}: {', '.join(run_ids)}")
+    return run_ids
 
 
-def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_outfile):
-    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
-    with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
-        prok_with_plasmids_lines = prok_with_plasmids_file_obj.read().splitlines()
-    ## skip the header.
-    prok_with_plasmids_data = prok_with_plasmids_lines[1:]
-    ## get the right column (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
-    refseq_id_column = [line.split("\t")[-5].replace("GCA", "GCF") for line in prok_with_plasmids_data]
-    ## filter for valid IDs (some rows have a '-' as a blank placeholder).
-    refseq_ids = [x for x in refseq_id_column if x.startswith("GCF")]
-    ## now make the RunID csv file.
-    with open(RunID_table_outfile, "w") as RunID_table_outfile_obj:
-        header = "RefSeq_ID,SRA_ID,Run_ID\n"
-        RunID_table_outfile_obj.write(header) 
-        for RefSeq_accession in refseq_ids:
-            my_SRA_ID = get_SRA_ID_from_RefSeqID(RefSeq_accession)
-            if my_SRA_ID == "NA": continue ## skip genomes without SRA data.
-            Run_IDs = fetch_Run_IDs_with_pysradb(my_SRA_ID)
-            for my_Run_ID in Run_IDs:
-                if my_Run_ID == "0" or my_Run_ID == "nan": continue ## skip bad Run_IDs
-                row = f"{RefSeq_accession},{my_SRA_ID},{my_Run_ID}\n"
-                print(row) ## just to show that the program is running properly.
-                RunID_table_outfile_obj.write(row)
+def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv):
+    """Create a table mapping RefSeq IDs to SRA IDs and Run IDs."""
+    logging.info("Creating RefSeq SRA RunID table...")
+    
+    # Create the output directory if it doesn't exist
+    os.makedirs(os.path.dirname(RunID_table_csv), exist_ok=True)
+    
+    with open(RunID_table_csv, 'w') as f:
+        writer = csv.writer(f)
+        logging.info("Writing header to RunID table...")
+        writer.writerow(["RefSeq_ID", "SRA_ID", "Run_ID"])
+        
+        # Count successful entries for reporting
+        successful_entries = 0
+
+        ## get all RefSeq IDs in the complete-prokaryotes-with-plasmids.txt file.
+        with open(prokaryotes_with_plasmids_file, 'r') as infile:
+            reader = csv.reader(infile, delimiter='\t')
+            next(reader)  # Skip header
+            
+            for i, row in enumerate(reader):
+                if TEST_MODE and i >= TEST_DOWNLOAD_LIMIT:
+                    logging.info(f"Test mode: stopping after {TEST_DOWNLOAD_LIMIT} genomes")
+                    break
+
+                ## should be 23 tab-separated fields in complete-prokaryotes-with-plasmids.txt.
+                assert len(row) == 23
+                RefSeq_ID = row[18]
+                ## filter for valid IDs (some rows have a '-' as a blank placeholder).
+                if RefSeq_ID == "-":
+                    continue
+                assert RefSeq_ID.startswith("GCF") ## make sure we have the right ID
+                logging.info(f"Processing genome {i+1}: {RefSeq_ID}")
+
+                SRA_ID = get_SRA_ID_from_RefSeqID(RefSeq_ID)
+                if SRA_ID != "NA":
+                    logging.info(f"Found SRA ID: {SRA_ID} for {RefSeq_ID}")
+                    Run_IDs = fetch_Run_IDs_with_pysradb(SRA_ID)
+
+                    if Run_IDs:
+                        for Run_ID in Run_IDs:
+                            if Run_ID == "0" or Run_ID == "nan":
+                                continue ## skip a bad Run_ID.
+                            writer.writerow([RefSeq_ID, SRA_ID, Run_ID])
+                            successful_entries += 1
+                            logging.info(f"Added entry: {RefSeq_ID}, {SRA_ID}, {Run_ID}")
+                    else:
+                        logging.warning(f"No Run IDs found for {RefSeq_ID} (SRA ID: {SRA_ID})")
+                else:
+                    logging.warning(f"No SRA ID found for {RefSeq_ID}")
+    
+    # Log summary
+    logging.info(f"Finished creating RunID table with {successful_entries} entries")
+    
+    # Debug: output the contents of the file
+    if exists(RunID_table_csv):
+        with open(RunID_table_csv, 'r') as f:
+            content = f.read()
+            logging.info(f"RunID table contents:\n{content}")
+    else:
+        logging.error(f"RunID table file {RunID_table_csv} was not created")
     return
 
 
 def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
     refseq_accession_to_ftp_path_dict = dict()
-    ## first, get all RefSeq IDs in the prokaryotes-with-plasmids.txt file.
+    
     with open(prokaryotes_with_plasmids_file, "r") as prok_with_plasmids_file_obj:
         for i, line in enumerate(prok_with_plasmids_file_obj):
-            if i == 0: continue ## skip the header.
-            ## get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs.
-            refseq_id = line.split("\t")[-5].replace("GCA", "GCF")        
-            ## get the ftp_url field (3rd from end) and make sure that we turn the GCA Genbank URL
-            ## into the GCF RefSeq FTP URL.
-            ftp_url = line.split("\t")[-3].replace("GCA", "GCF")
-            ## check for for valid IDs and URLs (some rows have a '-' as a blank placeholder).
+            if i == 0: continue  # skip the header
+            
+            fields = line.strip().split("\t")                
+            # Get the accession field (5th from end) and turn GCA Genbank IDs into GCF RefSeq IDs
+            refseq_id = fields[-5].replace("GCA", "GCF")
+            
+            # Get the ftp_url field (3rd from end) and make sure we turn the GCA Genbank URL
+            # into the GCF RefSeq FTP URL
+            ftp_url = fields[-3].replace("GCA", "GCF")
+            
+            # Check for valid IDs and URLs (some rows have a '-' as a blank placeholder)
             if refseq_id.startswith("GCF") and refseq_id in ftp_url:
                 refseq_accession_to_ftp_path_dict[refseq_id] = ftp_url
+                
     return refseq_accession_to_ftp_path_dict
 
 
@@ -208,82 +321,188 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
     return my_md5_checksum == my_target_checksum
 
 
-def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
-    ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
-    ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
+async def download_single_genome(ftp_path, reference_genome_dir, log_file):
+    """Download a single genome and its MD5 file"""
+    my_full_accession = basename(ftp_path)
+    my_base_filename = my_full_accession + "_genomic.gbff.gz"
+    
+    # Files on the NCBI FTP site to download
+    gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
+    md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
+    
+    # Local paths
+    gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
+    md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
 
+    # Check if files exist and are valid
+    if exists(gbff_gz_file) and exists(md5_file):
+        if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+            print(f"{gbff_gz_file} SUCCEEDED.")
+            return True
+        else:
+            os.remove(gbff_gz_file)
+            os.remove(md5_file)
+
+    # Try downloading up to 5 times
+    attempts = 5
+    while attempts > 0:
+        try:
+            await asyncio.to_thread(urllib.request.urlretrieve, gbff_ftp_path, filename=gbff_gz_file)
+            await asyncio.to_thread(urllib.request.urlretrieve, md5_ftp_path, filename=md5_file)
+            
+            if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
+                print(f"{gbff_gz_file} SUCCEEDED.")
+                return True
+            else:
+                if exists(gbff_gz_file):
+                    os.remove(gbff_gz_file)
+                if exists(md5_file):
+                    os.remove(md5_file)
+                
+        except Exception as e:
+            print(f"Attempt {6-attempts} failed for {gbff_gz_file}: {str(e)}")
+            if exists(gbff_gz_file):
+                os.remove(gbff_gz_file)
+            if exists(md5_file):
+                os.remove(md5_file)
+        
+        attempts -= 1
+    
+    print(f"{gbff_gz_file} FAILED after all attempts")
+    return False
+
+
+class RateLimiter:
+    """Rate limiter to prevent overwhelming NCBI servers."""
+    
+    def __init__(self, calls_per_minute=10):
+        self.calls_per_minute = calls_per_minute
+        self.interval = 60.0 / calls_per_minute  # seconds between calls
+        self.last_call_time = 0
+        self.lock = asyncio.Lock()
+    
+    @asynccontextmanager
+    async def limit(self):
+        """Context manager to limit the rate of API calls."""
+        async with self.lock:
+            # Calculate time since last call
+            current_time = time.time()
+            time_since_last_call = current_time - self.last_call_time
+            
+            # If we need to wait to respect rate limit
+            if time_since_last_call < self.interval:
+                wait_time = self.interval - time_since_last_call
+                logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds")
+                await asyncio.sleep(wait_time)
+            
+            # Update last call time
+            self.last_call_time = time.time()
+        
+        try:
+            # Allow the caller to proceed
+            yield
+        finally:
+            pass  # No cleanup needed
+
+
+async def async_download(ftp_paths, reference_genome_dir, log_file):
+    """Download genomes in parallel using asyncio task pool with rate limiting"""
+    # Create a semaphore to limit concurrent downloads
+    max_concurrent = 5  # Adjust based on your network capacity
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    # Create a rate limiter for NCBI
+    rate_limiter = RateLimiter(calls_per_minute=20)  # Adjust as needed
+
+    
+    async def download_with_limits(ftp_path):
+        """Download a single genome with rate and concurrency limits"""
+        async with semaphore:  # Limit concurrent downloads
+            async with rate_limiter.limit():  # Respect rate limits
+                return await download_single_genome(ftp_path, reference_genome_dir, log_file)
+    
+    # Create tasks for all downloads
+    tasks = []
+    for ftp_path in ftp_paths:
+        task = asyncio.create_task(download_with_limits(ftp_path))
+        tasks.append(task)
+    
+    # Use tqdm to show progress
+    results = []
+    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+        result = await task
+        results.append(result)
+    
+    return results
+
+
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
+    """Download reference genomes for each genome in the RunID table"""
+    # Create reference genome directory if it doesn't exist
+    os.makedirs(reference_genome_dir, exist_ok=True)
+
+    # Get RefSeq IDs from the RunID table
     with open(RunID_table_file, "r") as RunID_file_obj:
         RunID_table_lines = RunID_file_obj.read().splitlines()
 
-    ## remove the header from the imported data.
+    # Remove the header from the imported data
     RunID_table_data = RunID_table_lines[1:]
-    ## get the first column to get all refseq_ids of interest.
-    ## set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome).
+    # Get the first column to get all refseq_ids of interest
+    # Set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome)
     refseq_ids = {line.split(",")[0] for line in RunID_table_data}
-    ## now look up the FTP URLs for each refseq id.
+    
+    # Look up the FTP URLs for each refseq id
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
-    with open(log_file, 'w') as log_fh: ## for tracking which genomes are downloaded and which failed.
-        for ftp_path in tqdm(ftp_paths):
-            ## note that the format of this accession is {refseqid}_{assemblyid}.
-            my_full_accession = basename(ftp_path)
-            my_base_filename = my_full_accession + "_genomic.gbff.gz"
-            ## files on the NCBI FTP site to download
-            gbff_ftp_path = os.path.join(ftp_path, my_base_filename)
-            md5_ftp_path = os.path.join(ftp_path, "md5checksums.txt")
-            ## local paths to download these files
-            gbff_gz_file = os.path.join(reference_genome_dir, my_base_filename)
-            md5_file = os.path.join(reference_genome_dir, my_full_accession + "_md5checksums.txt")
-
-            if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                    print(f"{gbff_gz_file} SUCCEEDED.\n", file=log_fh) ## print to the log file,
-                    print(f"{gbff_gz_file} SUCCEEDED.\n") ## and print to stdout as well.
-                    continue
-                else:
-                    os.remove(gbff_gz_file)
-                    os.remove(md5_file)
-
-            gbff_fetch_attempts = 5
-            gbff_fetched = False
-
-            while not gbff_fetched and gbff_fetch_attempts:
-                try:
-                    urllib.request.urlretrieve(gbff_ftp_path, filename=gbff_gz_file)
-                    urllib.request.urlretrieve(md5_ftp_path, filename=md5_file)
-                except urllib.error.URLError:
-                    ## if some problem happens, try again.
-                    gbff_fetch_attempts -= 1
-                    if gbff_fetch_attempts == 0:
-                        print(f"{gbff_gz_file} FAILED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} FAILED.") ## and print to stdout as well.
-                    ## delete the corrupted files if they exist.
-                    if exists(gbff_gz_file):
-                        os.remove(gbff_gz_file)
-                    if exists(md5_file):
-                        os.remove(md5_file)
-                ## if we are here, then assume the try block worked.
-                if exists(gbff_gz_file) and exists(md5_file): ## then check whether the reference genome is OK.
-                    if reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
-                        print(f"{gbff_gz_file} SUCCEEDED.", file=log_fh) ## print to the log file,
-                        print(f"{gbff_gz_file} SUCCEEDED.") ## and print to stdout as well.
-                        gbff_fetched = True  ## assume success if the checksum matches,
-                        gbff_fetch_attempts = 0  ## and don't try again.
-                    else:
-                        os.remove(gbff_gz_file)
-                        os.remove(md5_file)
+    # Run the async download
+    with open(log_file, 'w') as log_fh:  # Open log file for writing
+        asyncio.run(async_download(ftp_paths, reference_genome_dir, log_file))
     return
- 
-
-def get_Run_IDs_from_RunID_table(RunID_table_file):
-    Run_IDs = list()
-    with open(RunID_table_file, "r") as RunID_table_fh:
-        table_csv = csv.DictReader(RunID_table_fh)
-        Run_IDs = [row["Run_ID"] for row in table_csv]
-    return Run_IDs
 
 
-def download_fastq_reads(SRA_data_dir, Run_IDs):
+def get_Run_IDs_from_RunID_table(RunID_table_csv):
+    """Get Run IDs from the RunID table CSV file."""
+    Run_IDs = []
+    
+    # Check if file exists
+    if not exists(RunID_table_csv):
+        logging.warning(f"RunID table {RunID_table_csv} does not exist")
+        
+        # In test mode, provide some hardcoded Run IDs for testing
+        if TEST_MODE:
+            logging.info("Test mode: Using hardcoded Run IDs for testing")
+            # These are example SRR IDs that should work for testing
+            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
+            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
+        return []
+    
+    try:
+        with open(RunID_table_csv, 'r') as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip header
+            for row in reader:
+                if len(row) >= 3 and row[2].strip():  # Check if Run_ID column has data
+                    Run_IDs.append(row[2])
+        
+        logging.info(f"Found {len(Run_IDs)} Run IDs in {RunID_table_csv}")
+        
+        # If no Run IDs found but in test mode, use hardcoded IDs
+        if not Run_IDs and TEST_MODE:
+            logging.info("Test mode: No Run IDs found in table, using hardcoded Run IDs")
+            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
+            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
+            
+        return Run_IDs
+    except Exception as e:
+        logging.error(f"Error reading RunID table: {e}")
+        if TEST_MODE:
+            logging.info("Test mode: Using hardcoded Run IDs due to error")
+            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
+            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
+        return []
+
+
+def old_download_fastq_reads(SRA_data_dir, Run_IDs):
         """
         the Run_ID has to be the last part of the directory.
         see documentation here:
@@ -323,23 +542,149 @@ def download_fastq_reads(SRA_data_dir, Run_IDs):
         return
 
 
-def all_fastq_data_exist(Run_IDs, SRA_data_dir):
-    ## check to see if all the expected files exist on disk (does not check for corrupted data).
-    SRA_file_list = os.listdir(SRA_data_dir)
-    prefetch_dirs = [f for f in SRA_file_list if os.path.isdir(os.path.join(SRA_data_dir, f))]
-    fastq_files = [f for f in SRA_file_list if f.endswith(".fastq")]
-    for Run_ID in Run_IDs:
-        ## does the prefetch directory exist?
-        if Run_ID not in SRA_file_list:
+async def download_fastq_reads(run_id, output_dir, max_retries=3):
+    """Download FASTQ files for a run ID with retry logic and optional compression."""
+    logging.info(f"Downloading {run_id} with command: fasterq-dump --split-files --skip-technical --outdir {output_dir} --force --progress {run_id}")
+    
+    for attempt in range(max_retries):
+        try:
+            # First prefetch the SRA data
+            logging.info(f"Prefetching {run_id} (attempt {attempt+1}/{max_retries})...")
+            prefetch_cmd = ["prefetch", run_id]
+            prefetch_process = await asyncio.create_subprocess_exec(
+                *prefetch_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            prefetch_stdout, prefetch_stderr = await prefetch_process.communicate()
+            
+            if prefetch_process.returncode != 0:
+                logging.error(f"Error prefetching {run_id} (attempt {attempt+1}/{max_retries}): {prefetch_stderr.decode()}")
+                await asyncio.sleep(2)
+                continue
+                
+            # Then use fasterq-dump to extract FASTQ
+            logging.info(f"Running fasterq-dump for {run_id} (attempt {attempt+1}/{max_retries})...")
+            cmd = [
+                "fasterq-dump",
+                "--split-files",
+                "--skip-technical",
+                "--outdir", output_dir,
+                "--force",
+                "--progress",
+                run_id
+            ]
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                logging.error(f"Error downloading {run_id} (attempt {attempt+1}/{max_retries}): {stderr.decode()}")
+                await asyncio.sleep(2)
+                continue
+            
+            logging.info(f"Successfully downloaded and processed {run_id}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Exception downloading {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
+            await asyncio.sleep(2)
+    
+    logging.error(f"Failed to download {run_id} after {max_retries} attempts")
+    return False
+
+
+    
+
+async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=3, max_retries=3):
+    """Download FASTQ reads in parallel with retry logic and integrity checks."""
+    os.makedirs(SRA_data_dir, exist_ok=True)
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def download_with_semaphore(run_id):
+        async with semaphore:
+            return await download_fastq_reads(run_id, SRA_data_dir, max_retries=max_retries)
+
+    total_downloads = len(Run_IDs)
+    completed = 0
+    failed = 0
+
+    tasks = [download_with_semaphore(run_id) for run_id in Run_IDs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Count successful downloads
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully downloaded {success_count}/{len(Run_IDs)} Run IDs")
+    
+    return success_count
+
+
+async def validate_sra_download(run_id):
+    """Validate the integrity of downloaded SRA data using vdb-validate."""
+    logging.info(f"Validating SRA download for {run_id}...")
+    
+    try:
+        # Run vdb-validate on the SRA accession
+        cmd = ["vdb-validate", run_id]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        stdout_text = stdout.decode() if stdout else ""
+        stderr_text = stderr.decode() if stderr else ""
+        
+        # Check if validation was successful
+        if process.returncode == 0 and "is consistent" in stdout_text:
+            logging.info(f"SRA validation successful for {run_id}")
+            return True
+        else:
+            error_msg = stderr_text.strip() or stdout_text.strip() or f"vdb-validate returned code {process.returncode}"
+            logging.warning(f"SRA validation failed for {run_id}: {error_msg}")
             return False
-        ## does the first fastq file exist?
-        sra_fastq_path_1 = os.path.join(SRA_data_dir, Run_ID + "_1.fastq")
-        if not os.path.exists(sra_fastq_path_1):
-            return False
-        ## does the second fastq file exist?
-        sra_fastq_path_2 = os.path.join(SRA_data_dir, Run_ID + "_2.fastq")
-        if  not os.path.exists(sra_fastq_path_2):
-            return False
+            
+    except Exception as e:
+        logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
+        return False
+
+
+def all_fastq_data_exist(run_ids, SRA_data_dir):
+    """Check if all FASTQ files exist for the given run IDs.
+    Does not check for corrupted data."""
+    missing_run_ids = []
+    
+    for run_id in run_ids:
+        extensions = ['.fastq']
+            
+        files_found = False
+        for ext in extensions:
+            paired_files = [
+                os.path.join(SRA_data_dir, f"{run_id}_1{ext}"),
+                os.path.join(SRA_data_dir, f"{run_id}_2{ext}")
+            ]
+            single_file = os.path.join(SRA_data_dir, f"{run_id}{ext}")
+
+            if (os.path.exists(paired_files[0]) and os.path.exists(paired_files[1])) or os.path.exists(single_file):
+                files_found = True
+                break
+                
+        if not files_found:
+            missing_run_ids.append(run_id)
+    
+    if missing_run_ids:
+        logging.warning(f"Missing FASTQ files for {len(missing_run_ids)}/{len(run_ids)} Run IDs")
+        logging.warning(f"First 10 missing Run IDs: {', '.join(missing_run_ids[:10])}...")
+        return False
+
     return True
 
 
@@ -1733,21 +2078,114 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
     return
 
 
+def create_test_subset():
+    """Create a subset of genomes for testing"""
+    original_file = "../results/complete-prokaryotes-with-plasmids.txt"
+    test_file = "../results/test-prokaryotes-with-plasmids.txt"
+    
+    logging.info(f"Creating test subset with {TEST_GENOME_COUNT} genomes")
+    
+    # Read the original file
+    with open(original_file, "r") as f:
+        lines = f.readlines()
+        header = lines[0]
+        data_lines = lines[1:]
+        
+        # Take the first TEST_GENOME_COUNT genomes or all if fewer
+        subset_count = min(TEST_GENOME_COUNT, len(data_lines))
+        subset_lines = [header] + data_lines[:subset_count]
+    
+    # Write the subset file
+    with open(test_file, "w") as f:
+        f.writelines(subset_lines)
+        
+    logging.info(f"Created test subset with {len(subset_lines)-1} genomes")
+    
+    # In test mode, use the test file instead of the original
+    global prokaryotes_with_plasmids_file
+    prokaryotes_with_plasmids_file = test_file
+
+
 
 ################################################################################
 
 def main():
 
+    # Create a global rate limiter instance
+    ncbi_rate_limiter = RateLimiter(calls_per_minute=10)  # Adjust as needed
+
+    
     ## Configure logging
-    run_log_file = "../results/PCN-pipeline-log.txt"
-    logging.basicConfig(filename=run_log_file, level=logging.INFO)
+    log_dir = "../results"  # Use the results directory which is already mounted
+    log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
+
+    try:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()  # Keep console output too
+            ]
+        )
+    except IOError:
+        # If we can't write to the log file, just log to console
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler()
+            ]
+        )
+        print("WARNING: Could not write to log file. Logging to console only.")
+
+    logging.info("Starting the pipeline...")
+    
+    # Test pysradb functionality
+    if TEST_MODE:
+        try:
+            test_pysradb_functionality()
+        except Exception as e:
+            logging.error(f"pysradb test failed: {str(e)}")
+            # Continue anyway
+    
+    # Handle test mode
+    if TEST_MODE:
+        logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
+        # Create test subset
+        try:
+            create_test_subset()
+        except Exception as e:
+            logging.error(f"Error creating test subset: {str(e)}")
+            # Continue anyway
+    else:
+        logging.info("Running in PRODUCTION MODE")
+
 
     ## define input and output files used in the pipeline.
+    if TEST_MODE:
+        prokaryotes_with_plasmids_file = "../results/test-prokaryotes-with-plasmids.txt"
+        RunID_table_csv = "../results/test-RunID_table.csv"
+        reference_genome_dir = "../data/test-NCBI-reference-genomes/"
+        SRA_data_dir = "../data/test-SRA/"
+        # Create necessary directories
+        os.makedirs(reference_genome_dir, exist_ok=True)
+        os.makedirs(SRA_data_dir, exist_ok=True)
+        reference_genome_log_file = "../results/test-reference_genome_fetching_log.txt"
+        stage_1_complete_file = "../results/test-stage1.done"
+        stage_2_complete_file = "../results/test-stage2.done"
+        stage_3_complete_file = "../results/test-stage3.done"
+    else:
+        prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
+        RunID_table_csv = "../results/RunID_table.csv"
+        reference_genome_dir = "../data/NCBI-reference-genomes/"
+        SRA_data_dir = "../data/SRA/"
+        os.makedirs(SRA_data_dir, exist_ok=True)
+        reference_genome_log_file = "../results/reference_genome_fetching_log.txt"
+        stage_1_complete_file = "../results/stage1.done"
+        stage_2_complete_file = "../results/stage2.done"
+        stage_3_complete_file = "../results/stage3.done"
 
-    prokaryotes_with_plasmids_file = "../results/prokaryotes-with-chromosomes-and-plasmids.txt"
-    RunID_table_csv = "../results/RunID_table.csv"
-    reference_genome_dir = "../data/NCBI-reference-genomes/"
-    SRA_data_dir = "../data/SRA/"
 
     ## directories for replicon-level copy number estimation with kallisto.
     kallisto_replicon_ref_dir = "../results/kallisto_replicon_references/"
@@ -1797,66 +2235,152 @@ def main():
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
+    logging.info("Stage 1: getting SRA IDs and Run IDs for RefSeq bacterial genomes with chromosomes and plasmids.")
+
     if exists(RunID_table_csv):
         Stage1DoneMessage = f"{RunID_table_csv} exists on disk-- skipping stage 1."
         print(Stage1DoneMessage)
         logging.info(Stage1DoneMessage)
-    else: ## This takes 34513 seconds (9.5h) to get RunIDs for 4921 genomes.
+    else:
         RunID_table_start_time = time.time()  # Record the start time
-        create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv)
+        
+        if TEST_MODE:
+            logging.info(f"Test mode: limiting API calls to {TEST_DOWNLOAD_LIMIT} genomes")
+            # Create a limited version of the input file
+            with open(prokaryotes_with_plasmids_file, "r") as f:
+                lines = f.readlines()
+                header = lines[0]
+                data_lines = lines[1:TEST_DOWNLOAD_LIMIT+1]
+            
+            limited_file = prokaryotes_with_plasmids_file + ".limited"
+            with open(limited_file, "w") as f:
+                f.write(header)
+                f.writelines(data_lines)
+            
+            # Use the limited file for API calls
+            create_RefSeq_SRA_RunID_table(limited_file, RunID_table_csv)
+        else:
+            create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv)
+            
         RunID_table_end_time = time.time()  # Record the end time
         RunID_table_execution_time = RunID_table_end_time - RunID_table_start_time
         Stage1TimeMessage = f"Stage 1 execution time: {RunID_table_execution_time} seconds"
         print(Stage1TimeMessage)
         logging.info(Stage1TimeMessage)
-        quit()
-
+        
+        # Display the contents of the RunID table for verification
+        logging.info("Contents of the RunID table:")
+        with open(RunID_table_csv, "r") as f:
+            table_contents = f.read()
+            logging.info(table_contents)
+            
+        with open(stage_1_complete_file, "w") as f:
+            f.write(f"Stage 1 completed in {RunID_table_execution_time:.1f} seconds\n")
+            
+        if TEST_MODE:
+            logging.info("Test mode: Stage 1 completed successfully")
+    
+    quit()
     
     #####################################################################################
-    ## Stage 2: download reference genomes for each of the bacterial genomes containing plasmids,
+    ## Stage 2: download reference genomes for each of the complete bacterial genomes containing plasmids,
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
     ## prokaryotes-with-plasmids.txt file.
     ## NOTE: as of May 27 2024, 4540 reference genomes should be downloaded.
-    stage_2_complete_file = "../results/stage2.done"
-    reference_genome_log_file = "../results/reference_genome_fetching_log.txt"
+
+    logging.info("Stage 2: downloading reference genomes for genomes containing plasmids.")
     if exists(stage_2_complete_file):
         print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
+        logging.info(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
     else:
         refgenome_download_start_time = time.time()  ## Record the start time
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
+        
+        # Log the FTP paths for debugging
+        logging.info(f"Found {len(refseq_accession_to_ftp_path_dict)} FTP paths")
+        
         ## now download the reference genomes.
         fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir, reference_genome_log_file)
         refgenome_download_end_time = time.time()  ## Record the end time
         refgenome_download_execution_time = refgenome_download_end_time - refgenome_download_start_time
         Stage2TimeMessage = f"Stage 2 (reference genome download) execution time: {refgenome_download_execution_time} seconds\n"
+        logging.info(Stage2TimeMessage)
+        
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write(Stage2TimeMessage)
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
-        quit()
+            
+        if TEST_MODE:
+            logging.info("Test mode: Stage 2 completed successfully")
+
+    quit()
+
     
     #####################################################################################
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
-    stage_3_complete_file = "../results/stage3.done"
+    logging.info("Stage 3: downloading Illumina reads from the NCBI Short Read Archive (SRA).")
     if exists(stage_3_complete_file):
         print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
+        logging.info(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
     else:
-        SRA_download_start_time = time.time()  ## Record the start time
-        Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
-        download_fastq_reads(SRA_data_dir, Run_IDs)
-        SRA_download_end_time = time.time()  ## Record the end time
-        SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-        Stage3TimeMessage = f"Stage 3 (SRA download) execution time: {SRA_download_execution_time} seconds\n"
-        print(Stage3TimeMessage)
-        logging.info(Stage3TimeMessage)
-
-        ## check to see if all the expected files exist on disk (does not check for corrupted data).
-        if all_fastq_data_exist(Run_IDs, SRA_data_dir):
-            with open(stage_3_complete_file, "w") as stage_3_complete_log:
-                stage_3_complete_log.write(Stage3TimeMessage)
-                stage_3_complete_log.write("SRA read data downloaded successfully.\n")
-        quit()
+        SRA_download_start_time = time.time()
+        
+        try:
+            #Make sure the source == GENOMIC and datatype=ILLUMINA (check with Rohan code)
+            # Get Run IDs with caching
+            Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
+            logging.info(f"Found {len(Run_IDs)} Run IDs to download")
+            
+            if TEST_MODE and len(Run_IDs) > TEST_DOWNLOAD_LIMIT:
+                logging.info(f"Test mode: limiting downloads to {TEST_DOWNLOAD_LIMIT} Run IDs")
+                Run_IDs = Run_IDs[:TEST_DOWNLOAD_LIMIT]
+            
+            # Run parallel download pipeline with reduced concurrency and retries
+            download_success = asyncio.run(download_fastq_reads_parallel(
+                SRA_data_dir, 
+                Run_IDs, 
+                max_concurrent=2,  # Reduce concurrency to avoid I/O issues
+                max_retries=3      # Add retries
+            ))
+            
+            if download_success:
+                # Skip separate compression since we're using --gzip in fasterq-dump
+                
+                # Validation
+                if all_fastq_data_exist(Run_IDs, SRA_data_dir, check_compressed=True):
+                    SRA_download_end_time = time.time()
+                    SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
+                    Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
+                    logging.info(Stage3TimeMessage)
+                    
+                    try:
+                        with open(stage_3_complete_file, "w") as f:
+                            f.write(Stage3TimeMessage)
+                    except IOError as e:
+                        logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
+                        
+                    if TEST_MODE:
+                        logging.info("Test mode: Stage 3 completed successfully")
+                else:
+                    logging.warning("Warning: Some downloads failed validation")
+            else:
+                logging.warning("All SRA downloads failed. Skipping compression step.")
+                if TEST_MODE:
+                    logging.info("Test mode: Stage 3 completed with download failures")
+        except Exception as e:
+            logging.error(f"Error in Stage 3: {str(e)}")
+            if TEST_MODE:
+                logging.info("Test mode: Stage 3 failed with errors")
     
+    # Exit after stage 3 in test mode
+    if TEST_MODE:
+        logging.info("Test mode: All 3 stages completed. Exiting.")
+        return  # Exit the main function
+
+    quit()
+
+        
     #####################################################################################   
     ## Stage 4: Make replicon-level FASTA reference files for copy number estimation using kallisto.
     stage_4_complete_file = "../results/stage4.done"
