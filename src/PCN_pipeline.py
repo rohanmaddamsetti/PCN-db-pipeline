@@ -170,23 +170,19 @@ def fetch_Run_IDs_with_pysradb(sra_id):
         logging.warning(f"No run data found for SRA ID: {sra_id}")
         return []
 
-    # Extract header information
-    header = lines[0].split("\t")
-    try:
-        run_idx = header.index("run_accession")
-        total_size_idx = header.index("total_size")
-    except ValueError as e:
-        logging.error(f"Error parsing pysradb output: {str(e)}")
-        return []
-
     run_ids = list()
-    
+    header = lines[0].split("\t")
     for my_SRA_metadata in lines[1:]:
         fields = my_SRA_metadata.split("\t")
-
-        run_id = fields[run_idx]
-        total_size = fields[total_size_idx]
-        int_total_size = int(total_size)
+        try: ## if the sequencing run in this line of metadata has bad data, just try the next line.
+            run_idx = header.index("run_accession")
+            total_size_idx = header.index("total_size")
+            run_id = fields[run_idx]
+            total_size = fields[total_size_idx]
+            int_total_size = int(total_size) ## this can fail if total_size == '<NA>'
+        except ValueError as e:
+            logging.error(f"Error parsing pysradb output: {str(e)}")
+            continue
 
         ## If there is data associated with this accession (total_size > 0), the run_accession is valid,
         ##and  this is Illumina WGS data, then add to the list of run_accessions.
@@ -399,15 +395,14 @@ class RateLimiter:
             pass  # No cleanup needed
 
 
-async def async_download(ftp_paths, reference_genome_dir, log_file):
+async def async_download(ftp_paths, reference_genome_dir, log_file, max_concurrent=10):
     """Download genomes in parallel using asyncio task pool with rate limiting"""
-    # Create a semaphore to limit concurrent downloads
-    max_concurrent = 5  # Adjust based on your network capacity
+    ## Create a semaphore to limit concurrent downloads
+    ## Adjust based on your network capacity
     semaphore = asyncio.Semaphore(max_concurrent)
     
     # Create a rate limiter for NCBI
     rate_limiter = RateLimiter(calls_per_minute=20)  # Adjust as needed
-
     
     async def download_with_limits(ftp_path):
         """Download a single genome with rate and concurrency limits"""
@@ -432,23 +427,23 @@ async def async_download(ftp_paths, reference_genome_dir, log_file):
 
 def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
     """Download reference genomes for each genome in the RunID table"""
-    # Create reference genome directory if it doesn't exist
+    ## Create reference genome directory if it doesn't exist
     os.makedirs(reference_genome_dir, exist_ok=True)
 
-    # Get RefSeq IDs from the RunID table
+    ## Get RefSeq IDs from the RunID table
     with open(RunID_table_file, "r") as RunID_file_obj:
         RunID_table_lines = RunID_file_obj.read().splitlines()
 
-    # Remove the header from the imported data
+    ## Remove the header from the imported data
     RunID_table_data = RunID_table_lines[1:]
-    # Get the first column to get all refseq_ids of interest
-    # Set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome)
+    ## Get the first column to get all refseq_ids of interest
+    ## Set comprehension to remove duplicates (there can be multiple SRA datasets per reference genome)
     refseq_ids = {line.split(",")[0] for line in RunID_table_data}
     
-    # Look up the FTP URLs for each refseq id
+    ## Look up the FTP URLs for each refseq id
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
-    # Run the async download
+    ## Run the async download
     with open(log_file, 'w') as log_fh:  # Open log file for writing
         asyncio.run(async_download(ftp_paths, reference_genome_dir, log_file))
     return
@@ -593,8 +588,6 @@ async def download_fastq_reads(run_id, output_dir, max_retries=3):
     logging.error(f"Failed to download {run_id} after {max_retries} attempts")
     return False
 
-
-    
 
 async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=3, max_retries=3):
     """Download FASTQ reads in parallel with retry logic and integrity checks."""
@@ -2732,7 +2725,6 @@ def main():
             stage_21_complete_log.write(Stage21TimeMessage)
             stage_21_complete_log.write("stage 21 (minimap2 results parsing) finished successfully.\n")
         quit()
-
 
     #####################################################################################
     ## Stage 22: run breseq on the set of 100 genomes chosen for benchmarking.

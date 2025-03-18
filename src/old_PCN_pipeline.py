@@ -204,6 +204,9 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     ## we get RefSeq IDs from the RunID table because this file *only* contains those RefSeq IDs 
     ## for which we could download raw Illumina short reads from the NCBI Short Read Archive.
 
+    ## Create reference genome directory if it doesn't exist
+    os.makedirs(reference_genome_dir, exist_ok=True)
+    
     with open(RunID_table_file, "r") as RunID_file_obj:
         RunID_table_lines = RunID_file_obj.read().splitlines()
 
