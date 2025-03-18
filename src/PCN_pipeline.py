@@ -41,10 +41,10 @@ import asyncio
 import shutil
 from contextlib import asynccontextmanager
 
-# Test mode configuration
-TEST_MODE = True  # Set to True for testing
-TEST_GENOME_COUNT = 10 #1000  # Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 10 #50  # Increase from 10 to 50 for better testing
+## Test mode configuration
+TEST_MODE = False  ## Set to True for testing
+TEST_GENOME_COUNT = 1000  ## Number of genomes to process
+TEST_DOWNLOAD_LIMIT = 50  ## Increase from 10 to 50 for better testing
 
 """
 TODO list:
@@ -594,7 +594,7 @@ async def unpack_fastq_reads(run_id, SRA_data_dir):
     
     try:
         ## Use fasterq-dump to extract FASTQ
-        logging.info(f"Running fasterq-dump for {run_id} (attempt {attempt+1}/{max_retries})...")
+        logging.info(f"Running fasterq-dump for {run_id}...")
         cmd = [
             "fasterq-dump",
             "--split-files",
@@ -602,7 +602,7 @@ async def unpack_fastq_reads(run_id, SRA_data_dir):
             "--temp", SRA_data_dir,
             "--outdir", SRA_data_dir,
             "--progress",
-            run_id
+            os.path.join(SRA_data_dir, run_id) ## give the path to the prefetched dirs.
         ]
 
         process = await asyncio.create_subprocess_exec(
@@ -612,7 +612,7 @@ async def unpack_fastq_reads(run_id, SRA_data_dir):
         )
 
         stdout, stderr = await process.communicate()
-
+        
         if process.returncode == 0:
             logging.info(f"Successfully unpacked {run_id} into fastq data.")
             return True
@@ -631,7 +631,7 @@ async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
 
     async def unpack_with_semaphore(run_id):
         async with semaphore:
-            return await download_fastq_reads(run_id, SRA_data_dir)
+            return await unpack_fastq_reads(run_id, SRA_data_dir)
 
     total_downloads = len(Run_IDs)
     completed = 0
@@ -639,7 +639,6 @@ async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
 
     tasks = [unpack_with_semaphore(run_id) for run_id in Run_IDs]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
     # Count successful downloads
     success_count = sum(1 for r in results if r is True)
     logging.info(f"Successfully unpacked {success_count}/{len(Run_IDs)} Run IDs")
@@ -665,8 +664,9 @@ async def validate_sra_download(run_id, SRA_data_dir):
         stdout_text = stdout.decode() if stdout else ""
         stderr_text = stderr.decode() if stderr else ""
         
-        # Check if validation was successful
-        if process.returncode == 0 and "is consistent" in stdout_text:
+        ## Check if validation was successful
+        if process.returncode == 0 and "is consistent" in stderr_text:
+            print("HELLO5")
             logging.info(f"SRA validation successful for {run_id}")
             return True
         else:
@@ -694,6 +694,7 @@ async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=1
 
     tasks = [validate_with_semaphore(run_id) for run_id in Run_IDs]
     results = await asyncio.gather(*tasks, return_exceptions=True)
+    print(results)
     
     # Count validated downloads
     success_count = sum(1 for r in results if r is True)
@@ -2395,9 +2396,6 @@ def main():
                     Run_IDs, 
                     max_concurrent=10
                 ))
-
-                print(fasterq_dump_success)  ## DEBUGGING !!!!!!!!
-                quit()
 
                 if fasterq_dump_success:
                     ## then check to see that all fastq files exist on disk
