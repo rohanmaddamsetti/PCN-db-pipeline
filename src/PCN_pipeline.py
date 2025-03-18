@@ -559,6 +559,7 @@ async def download_fastq_reads(run_id, SRA_dir, max_retries=3):
                 "fasterq-dump",
                 "--split-files",
                 "--skip-technical",
+                "--temp", SRA_dir,
                 "--outdir", SRA_dir,
                 "--force",
                 "--progress",
