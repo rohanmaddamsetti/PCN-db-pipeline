@@ -35,16 +35,16 @@ import HTSeq ## for filtering fastq multireads.
 import numpy as np ## for matrix multiplications for running PIRA.
 from bs4 import BeautifulSoup ## for parsing breseq output.
 
-## imports for parallelization written by Irida.
+## imports for parallelization.
 from tqdm.asyncio import tqdm as async_tqdm
 import asyncio
 import shutil
 from contextlib import asynccontextmanager
 
 # Test mode configuration
-TEST_MODE = False  # Set to True for testing
-TEST_GENOME_COUNT = 1000  # Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 50  # Increase from 10 to 50 for better testing
+TEST_MODE = True  # Set to True for testing
+TEST_GENOME_COUNT = 10 #1000  # Number of genomes to process
+TEST_DOWNLOAD_LIMIT = 10 #50  # Increase from 10 to 50 for better testing
 
 """
 TODO list:
@@ -75,6 +75,40 @@ GCF_000025625.1_ASM2562v1
 GCF_014872735.1_ASM1487273v1
 """
 
+################################################################################
+## Classes.
+
+class RateLimiter:
+    """Rate limiter to prevent overwhelming NCBI servers."""
+    
+    def __init__(self, calls_per_minute=10):
+        self.calls_per_minute = calls_per_minute
+        self.interval = 60.0 / calls_per_minute  # seconds between calls
+        self.last_call_time = 0
+        self.lock = asyncio.Lock()
+    
+    @asynccontextmanager
+    async def limit(self):
+        """Context manager to limit the rate of API calls."""
+        async with self.lock:
+            # Calculate time since last call
+            current_time = time.time()
+            time_since_last_call = current_time - self.last_call_time
+            
+            # If we need to wait to respect rate limit
+            if time_since_last_call < self.interval:
+                wait_time = self.interval - time_since_last_call
+                logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds")
+                await asyncio.sleep(wait_time)
+            
+            # Update last call time
+            self.last_call_time = time.time()
+        
+        try:
+            # Allow the caller to proceed
+            yield
+        finally:
+            pass  # No cleanup needed
 
 ################################################################################
 ## Functions.
@@ -362,39 +396,6 @@ async def download_single_genome(ftp_path, reference_genome_dir, log_file):
     return False
 
 
-class RateLimiter:
-    """Rate limiter to prevent overwhelming NCBI servers."""
-    
-    def __init__(self, calls_per_minute=10):
-        self.calls_per_minute = calls_per_minute
-        self.interval = 60.0 / calls_per_minute  # seconds between calls
-        self.last_call_time = 0
-        self.lock = asyncio.Lock()
-    
-    @asynccontextmanager
-    async def limit(self):
-        """Context manager to limit the rate of API calls."""
-        async with self.lock:
-            # Calculate time since last call
-            current_time = time.time()
-            time_since_last_call = current_time - self.last_call_time
-            
-            # If we need to wait to respect rate limit
-            if time_since_last_call < self.interval:
-                wait_time = self.interval - time_since_last_call
-                logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds")
-                await asyncio.sleep(wait_time)
-            
-            # Update last call time
-            self.last_call_time = time.time()
-        
-        try:
-            # Allow the caller to proceed
-            yield
-        finally:
-            pass  # No cleanup needed
-
-
 async def async_download(ftp_paths, reference_genome_dir, log_file, max_concurrent=10):
     """Download genomes in parallel using asyncio task pool with rate limiting"""
     ## Create a semaphore to limit concurrent downloads
@@ -523,7 +524,7 @@ def old_download_fastq_reads(SRA_data_dir, Run_IDs):
                 continue
             else:
                 print ("Generating fastq for: " + Run_ID)
-                fasterq_dump_args = ["fasterq-dump", "--threads", "10", Run_ID]
+                fasterq_dump_args = ["fasterq-dump", "--threads", "10", "-O", SRA_data_dir, Run_ID]
                 print(" ".join(fasterq_dump_args))
                 subprocess.run(fasterq_dump_args)
         ## now change back to original working directory.
@@ -531,15 +532,15 @@ def old_download_fastq_reads(SRA_data_dir, Run_IDs):
         return
 
 
-async def download_fastq_reads(run_id, SRA_dir, max_retries=3):
-    """Download FASTQ files for a run ID with retry logic."""
-    logging.info(f"Downloading {run_id} with command: fasterq-dump --split-files --skip-technical --outdir {output_dir} --force --progress {run_id}")
+async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=3):
+    """prefetch FASTQ files for a run ID with retry logic."""
+    logging.info(f"Prefetching {run_id} with command: prefetch --max-size 100G -O {SRA_data_dir} {run_id}")
     
     for attempt in range(max_retries):
         try:
             # First prefetch the SRA data
             logging.info(f"Prefetching {run_id} (attempt {attempt+1}/{max_retries})...")
-            prefetch_cmd = ["prefetch", run_id]
+            prefetch_cmd = ["prefetch", "--max-size", "100G", "-O", SRA_data_dir, run_id]
             prefetch_process = await asyncio.create_subprocess_exec(
                 *prefetch_cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -552,74 +553,107 @@ async def download_fastq_reads(run_id, SRA_dir, max_retries=3):
                 logging.error(f"Error prefetching {run_id} (attempt {attempt+1}/{max_retries}): {prefetch_stderr.decode()}")
                 await asyncio.sleep(0.1)
                 continue
-                
-            # Then use fasterq-dump to extract FASTQ
-            logging.info(f"Running fasterq-dump for {run_id} (attempt {attempt+1}/{max_retries})...")
-            cmd = [
-                "fasterq-dump",
-                "--split-files",
-                "--skip-technical",
-                "--temp", SRA_dir,
-                "--outdir", SRA_dir,
-                "--force",
-                "--progress",
-                run_id
-            ]
-            
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                logging.error(f"Error downloading {run_id} (attempt {attempt+1}/{max_retries}): {stderr.decode()}")
-                await asyncio.sleep(0.1)
-                continue
-            
-            logging.info(f"Successfully downloaded and processed {run_id}")
-            return True
+            else:             
+                logging.info(f"Successfully prefetched {run_id}")
+                return True
             
         except Exception as e:
-            logging.error(f"Exception downloading {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
+            logging.error(f"Exception prefetching {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
             await asyncio.sleep(0.1)
     
-    logging.error(f"Failed to download {run_id} after {max_retries} attempts")
+    logging.error(f"Failed to prefetch {run_id} after {max_retries} attempts")
     return False
 
 
-async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=3, max_retries=3):
-    """Download FASTQ reads in parallel with retry logic and integrity checks."""
+async def prefetch_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=3):
+    """prefetch FASTQ reads in parallel with retry logic and integrity checks."""
     os.makedirs(SRA_data_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def download_with_semaphore(run_id):
+    async def prefetch_with_semaphore(run_id):
         async with semaphore:
-            return await download_fastq_reads(run_id, SRA_data_dir, max_retries=max_retries)
+            return await prefetch_fastq_reads(run_id, SRA_data_dir, max_retries)
 
     total_downloads = len(Run_IDs)
     completed = 0
     failed = 0
 
-    tasks = [download_with_semaphore(run_id) for run_id in Run_IDs]
+    tasks = [prefetch_with_semaphore(run_id) for run_id in Run_IDs]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # Count successful downloads
     success_count = sum(1 for r in results if r is True)
-    logging.info(f"Successfully downloaded {success_count}/{len(Run_IDs)} Run IDs")
+    logging.info(f"Successfully prefetched {success_count}/{len(Run_IDs)} Run IDs")
     
     return success_count
 
 
-async def validate_sra_download(run_id, SRA_dir):
+async def unpack_fastq_reads(run_id, SRA_data_dir):
+    """Unpack prefetched sra files into FASTQ."""
+    logging.info(f"Unpacking {run_id} with command: fasterq-dump --split-files --skip-technical --temp {SRA_data_dir} --outdir {SRA_data_dir} --progress {run_id}")
+    
+    try:
+        ## Use fasterq-dump to extract FASTQ
+        logging.info(f"Running fasterq-dump for {run_id} (attempt {attempt+1}/{max_retries})...")
+        cmd = [
+            "fasterq-dump",
+            "--split-files",
+            "--skip-technical",
+            "--temp", SRA_data_dir,
+            "--outdir", SRA_data_dir,
+            "--progress",
+            run_id
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0:
+            logging.info(f"Successfully unpacked {run_id} into fastq data.")
+            return True
+            
+    except Exception as e:
+        logging.error(f"Exception unpacking {run_id}: {str(e)}")
+
+    logging.error(f"Failed to fasterq-dump {run_id}")
+    return False
+
+
+async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
+    """unpack FASTQ reads in parallel with retry logic and integrity checks."""
+    os.makedirs(SRA_data_dir, exist_ok=True)
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def unpack_with_semaphore(run_id):
+        async with semaphore:
+            return await download_fastq_reads(run_id, SRA_data_dir)
+
+    total_downloads = len(Run_IDs)
+    completed = 0
+    failed = 0
+
+    tasks = [unpack_with_semaphore(run_id) for run_id in Run_IDs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Count successful downloads
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully unpacked {success_count}/{len(Run_IDs)} Run IDs")
+    
+    return success_count
+
+
+async def validate_sra_download(run_id, SRA_data_dir):
     """Validate the integrity of downloaded SRA data using vdb-validate."""
     logging.info(f"Validating SRA download for {run_id}...")
     
     try:
         # Run vdb-validate on the SRA accession
-        cmd = ["vdb-validate", os.path.join(SRA_dir, run_id)]
+        cmd = ["vdb-validate", os.path.join(SRA_data_dir, run_id)]
         
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -642,16 +676,17 @@ async def validate_sra_download(run_id, SRA_dir):
             
     except Exception as e:
         logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
-        return False
+
+    return False
 
 
-async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=3):
+async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
     """Run vdb-validate in parallel with retry logic and integrity checks."""
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def validate_with_semaphore(run_id):
         async with semaphore:
-            return await validate_sra_download(run_id, SRA_data_dir, max_retries=max_retries)
+            return await validate_sra_download(run_id, SRA_data_dir)
 
     total_downloads = len(Run_IDs)
     completed = 0
@@ -666,7 +701,7 @@ async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=1
     
     return success_count
 
-    
+
 def all_fastq_data_exist(run_ids, SRA_data_dir):
     """Check if all FASTQ files exist for the given run IDs.
     Does not check for corrupted data."""
@@ -2336,53 +2371,64 @@ def main():
         SRA_download_start_time = time.time()
         
         try:
-            ## Get Run IDs with caching
+            ## Get Run IDs from disk.
             Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
             logging.info(f"Found {len(Run_IDs)} Run IDs to download")
             
             if TEST_MODE and len(Run_IDs) > TEST_DOWNLOAD_LIMIT:
                 logging.info(f"Test mode: limiting downloads to {TEST_DOWNLOAD_LIMIT} Run IDs")
                 Run_IDs = Run_IDs[:TEST_DOWNLOAD_LIMIT]
-            
-            # Run parallel download pipeline with reduced concurrency and retries
-            download_success = asyncio.run(download_fastq_reads_parallel(
+
+            ## Run parallel prefetch pipeline with reduced concurrency and retries
+            prefetch_success = asyncio.run(prefetch_fastq_reads_parallel(
                 SRA_data_dir, 
                 Run_IDs, 
-                max_concurrent=10, ##2,  ## Reduce concurrency to avoid I/O issues
+                max_concurrent=10,  ## Reduce concurrency to avoid I/O issues
                 max_retries=3      ## Add retries
             ))
+
+            if prefetch_success:
             
-            if download_success:
-                
-                # Validation
-                if all_fastq_data_exist(Run_IDs, SRA_data_dir):
-                    
-                    ## Run parallel download pipeline with reduced concurrency and retries
-                    validation_success = asyncio.run(validate_sra_download_parallel(
-                        SRA_data_dir, 
-                        Run_IDs, 
-                        max_concurrent=10, ##2,  ## Reduce concurrency to avoid I/O issues
-                        max_retries=3      ## Add retries
-                    ))
-     
-                    if validation_success:
-                        SRA_download_end_time = time.time()
-                        SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-                        Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
-                        logging.info(Stage3TimeMessage)
-                    
-                        try:
-                            with open(stage_3_complete_file, "w") as f:
-                                f.write(Stage3TimeMessage)
-                        except IOError as e:
-                            logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
+                ## Run fasterq-dump in parallel
+                fasterq_dump_success = asyncio.run(unpack_fastq_reads_parallel(
+                    SRA_data_dir, 
+                    Run_IDs, 
+                    max_concurrent=10
+                ))
+
+                print(fasterq_dump_success)  ## DEBUGGING !!!!!!!!
+                quit()
+
+                if fasterq_dump_success:
+                    ## then check to see that all fastq files exist on disk
+                    if all_fastq_data_exist(Run_IDs, SRA_data_dir):
+                        ## then validate each fastq file
+                        validation_success = asyncio.run(validate_sra_download_parallel(
+                            SRA_data_dir, 
+                            Run_IDs, 
+                            max_concurrent=10,
+                        ))
+
+                        if validation_success:
+                            SRA_download_end_time = time.time()
+                            SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
+                            Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
+                            logging.info(Stage3TimeMessage)
+
+                            try:
+                                with open(stage_3_complete_file, "w") as f:
+                                    f.write(Stage3TimeMessage)
+                            except IOError as e:
+                                logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
                         
-                        if TEST_MODE:
-                            logging.info("Test mode: Stage 3 completed successfully")
+                            if TEST_MODE:
+                                logging.info("Test mode: Stage 3 completed successfully")
+                        else:
+                            logging.warning("Warning: All files downloaded but some downloads failed validation")
                     else:
-                        logging.warning("Warning: All files downloaded but some downloads failed validation")
+                        logging.warning("Warning: All files prefetched but some files failed unpacking with fasterq-dump.")
                 else:
-                    logging.warning("Warning: Some downloads failed.")
+                    logging.warning("Warning: Some prefetch downloads failed.")
             else:
                 logging.warning("All SRA downloads failed.")
                 if TEST_MODE:
