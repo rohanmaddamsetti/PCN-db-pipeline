@@ -2436,11 +2436,11 @@ def main():
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
                 
-                
-    # Exit after stage 3 in test mode
+    
+    ## Exit after stage 3 in test mode
     if TEST_MODE:
         logging.info("Test mode: All 3 stages completed. Exiting.")
-        return  # Exit the main function
+        return  ## Exit the main function
 
 
         
@@ -2461,7 +2461,7 @@ def main():
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
             stage_4_complete_log.write(Stage5TimeMessage)
             stage_4_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 5: Make replicon-level kallisto index files for each genome.
@@ -2479,7 +2479,7 @@ def main():
         with open(stage_5_complete_file, "w") as stage_5_complete_log:
             stage_5_complete_log.write(Stage5TimeMessage)
             stage_5_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 6: run kallisto quant on all genome data, on replicon-level indices.
@@ -2500,7 +2500,7 @@ def main():
         with open(stage_6_complete_file, "w") as stage_6_complete_log:
             stage_6_complete_log.write(Stage6TimeMessage)
             stage_6_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
-        quit()
+        return  ## Exit the main function
     
     #####################################################################################
     ## Stage 7: make a table of the estimated copy number for all chromosomes and plasmids.
@@ -2519,7 +2519,7 @@ def main():
         with open(stage_7_complete_file, "w") as stage_7_complete_log:
             stage_7_complete_log.write(Stage7TimeMessage)
             stage_7_complete_log.write("stage 7 (tabulating all replicon copy numbers) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 8: tabulate the length of all chromosomes and plasmids.
@@ -2537,7 +2537,7 @@ def main():
         with open(stage_8_complete_file, "w") as stage_8_complete_log:
             stage_8_complete_log.write(Stage8TimeMessage)
             stage_8_complete_log.write("stage 8 (tabulating all replicon lengths) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
             
     #####################################################################################
     ## Stage 9: Make FASTA input files for Themisto.
@@ -2558,7 +2558,7 @@ def main():
         with open(stage_9_complete_file, "w") as stage_9_complete_log:
             stage_9_complete_log.write(Stage9TimeMessage)
             stage_9_complete_log.write("stage 9 (making fasta references for themisto) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
         
     #####################################################################################
     ## Stage 10: Build separate Themisto indices for each genome.
@@ -2576,7 +2576,7 @@ def main():
         with open(stage_10_complete_file, "w") as stage_10_complete_log:
             stage_10_complete_log.write(Stage10TimeMessage)
             stage_10_complete_log.write("stage 10 (making indices for themisto) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
         
     #####################################################################################
     ## Stage 11: Pseudoalign reads for each genome against each Themisto index.
@@ -2596,7 +2596,7 @@ def main():
         with open(stage_11_complete_file, "w") as stage_11_complete_log:
             stage_11_complete_log.write(Stage11TimeMessage)
             stage_11_complete_log.write("stage 11 (themisto pseudoalignment) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
         
     #####################################################################################
     ## Stage 12: generate a large CSV file summarizing the themisto pseudoalignment read counts.
@@ -2614,7 +2614,7 @@ def main():
         with open(stage_12_complete_file, "w") as stage_12_complete_log:
             stage_12_complete_log.write(Stage12TimeMessage)
             stage_12_complete_log.write("stage 12 (themisto pseudoalignment summarization) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
         
     #####################################################################################
     ## Stage 13: estimate plasmid copy numbers using the themisto read counts.
@@ -2634,7 +2634,7 @@ def main():
         with open(stage_13_complete_file, "w") as stage_13_complete_log:
             stage_13_complete_log.write(Stage13TimeMessage)
             stage_13_complete_log.write("stage 13 (themisto PCN estimates) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 14: make gbk ecological annotation file.
@@ -2652,7 +2652,7 @@ def main():
         with open(stage_14_complete_file, "w") as stage_14_complete_log:
             stage_14_complete_log.write(Stage14TimeMessage)
             stage_14_complete_log.write("stage 14 (gbk ecological annotation) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
     
     #####################################################################################
     ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
@@ -2675,7 +2675,7 @@ def main():
         with open(stage_15_complete_file, "w") as stage_15_complete_log:
             stage_15_complete_log.write(Stage15TimeMessage)
             stage_15_complete_log.write("stage 15 (fastq read filtering) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
     
     #####################################################################################
     ## Stage 16: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
@@ -2693,7 +2693,7 @@ def main():
         with open(stage_16_complete_file, "w") as stage_16_complete_log:
             stage_16_complete_log.write(Stage16TimeMessage)
             stage_16_complete_log.write("stage 16 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 17: for each genome, align multireads to the replicons with minimap2.
@@ -2711,7 +2711,7 @@ def main():
         with open(stage_17_complete_file, "w") as stage_17_complete_log:
             stage_17_complete_log.write(Stage17TimeMessage)
             stage_17_complete_log.write("stage 17 (aligning multireads with minimap2) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 18: Run PIRA.
@@ -2731,7 +2731,7 @@ def main():
         with open(stage_18_complete_file, "w") as stage_18_complete_log:
             stage_18_complete_log.write(Stage18TimeMessage)
             stage_18_complete_log.write("stage 18 (parsing multiread alignments and running PIRA) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2.
@@ -2758,7 +2758,7 @@ def main():
         with open(stage_19_complete_file, "w") as stage_19_complete_log:
             stage_19_complete_log.write(Stage19TimeMessage)
             stage_19_complete_log.write("stage 19 (choosing 100 random genomes with PCN < 1) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
 
     #####################################################################################
@@ -2780,7 +2780,7 @@ def main():
         with open(stage_20_complete_file, "w") as stage_20_complete_log:
             stage_20_complete_log.write(Stage20TimeMessage)
             stage_20_complete_log.write("stage 20 (minimap2 full alignment) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 21: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
@@ -2801,7 +2801,7 @@ def main():
         with open(stage_21_complete_file, "w") as stage_21_complete_log:
             stage_21_complete_log.write(Stage21TimeMessage)
             stage_21_complete_log.write("stage 21 (minimap2 results parsing) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 22: run breseq on the set of 100 genomes chosen for benchmarking.
@@ -2822,7 +2822,7 @@ def main():
         with open(stage_22_complete_file, "w") as stage_22_complete_log:
             stage_22_complete_log.write(Stage22TimeMessage)
             stage_22_complete_log.write("stage 22 (running breseq) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
 
     #####################################################################################
     ## Stage 23: parse breseq results on the set of 100 genomes chosen for benchmarking.
@@ -2841,7 +2841,7 @@ def main():
         with open(stage_23_complete_file, "w") as stage_23_complete_log:
             stage_23_complete_log.write(Stage23TimeMessage)
             stage_23_complete_log.write("stage 23 (breseq results parsing) finished successfully.\n")
-        quit()
+        return  ## Exit the main function
         
     return
 
