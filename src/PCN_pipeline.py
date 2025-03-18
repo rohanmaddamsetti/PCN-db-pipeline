@@ -531,8 +531,8 @@ def old_download_fastq_reads(SRA_data_dir, Run_IDs):
         return
 
 
-async def download_fastq_reads(run_id, output_dir, max_retries=3):
-    """Download FASTQ files for a run ID with retry logic and optional compression."""
+async def download_fastq_reads(run_id, SRA_dir, max_retries=3):
+    """Download FASTQ files for a run ID with retry logic."""
     logging.info(f"Downloading {run_id} with command: fasterq-dump --split-files --skip-technical --outdir {output_dir} --force --progress {run_id}")
     
     for attempt in range(max_retries):
@@ -559,7 +559,7 @@ async def download_fastq_reads(run_id, output_dir, max_retries=3):
                 "fasterq-dump",
                 "--split-files",
                 "--skip-technical",
-                "--outdir", output_dir,
+                "--outdir", SRA_dir,
                 "--force",
                 "--progress",
                 run_id
@@ -612,13 +612,13 @@ async def download_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=3,
     return success_count
 
 
-async def validate_sra_download(run_id):
+async def validate_sra_download(run_id, SRA_dir):
     """Validate the integrity of downloaded SRA data using vdb-validate."""
     logging.info(f"Validating SRA download for {run_id}...")
     
     try:
         # Run vdb-validate on the SRA accession
-        cmd = ["vdb-validate", run_id]
+        cmd = ["vdb-validate", os.path.join(SRA_dir, run_id)]
         
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -644,6 +644,28 @@ async def validate_sra_download(run_id):
         return False
 
 
+async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=3):
+    """Run vdb-validate in parallel with retry logic and integrity checks."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def validate_with_semaphore(run_id):
+        async with semaphore:
+            return await validate_sra_download(run_id, SRA_data_dir, max_retries=max_retries)
+
+    total_downloads = len(Run_IDs)
+    completed = 0
+    failed = 0
+
+    tasks = [validate_with_semaphore(run_id) for run_id in Run_IDs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Count validated downloads
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully downloaded and validated {success_count}/{len(Run_IDs)} Run IDs")
+    
+    return success_count
+
+    
 def all_fastq_data_exist(run_ids, SRA_data_dir):
     """Check if all FASTQ files exist for the given run IDs.
     Does not check for corrupted data."""
@@ -669,7 +691,7 @@ def all_fastq_data_exist(run_ids, SRA_data_dir):
     
     if missing_run_ids:
         logging.warning(f"Missing FASTQ files for {len(missing_run_ids)}/{len(run_ids)} Run IDs")
-        logging.warning(f"First 10 missing Run IDs: {', '.join(missing_run_ids[:10])}...")
+        logging.warning(f"Missing Run IDs: {', '.join(missing_run_ids)}...")
         return False
 
     return True
@@ -2263,6 +2285,7 @@ def main():
             
         with open(stage_1_complete_file, "w") as f:
             f.write(f"Stage 1 completed in {RunID_table_execution_time:.1f} seconds\n")
+            quit()
             
         if TEST_MODE:
             logging.info("Test mode: Stage 1 completed successfully")
@@ -2296,11 +2319,10 @@ def main():
         with open(stage_2_complete_file, "w") as stage_2_complete_log:
             stage_2_complete_log.write(Stage2TimeMessage)
             stage_2_complete_log.write("reference genomes downloaded successfully.\n")
+            quit()
             
         if TEST_MODE:
             logging.info("Test mode: Stage 2 completed successfully")
-
-    quit()
 
     
     #####################################################################################
@@ -2313,8 +2335,7 @@ def main():
         SRA_download_start_time = time.time()
         
         try:
-            #Make sure the source == GENOMIC and datatype=ILLUMINA (check with Rohan code)
-            # Get Run IDs with caching
+            ## Get Run IDs with caching
             Run_IDs = get_Run_IDs_from_RunID_table(RunID_table_csv)
             logging.info(f"Found {len(Run_IDs)} Run IDs to download")
             
@@ -2326,45 +2347,56 @@ def main():
             download_success = asyncio.run(download_fastq_reads_parallel(
                 SRA_data_dir, 
                 Run_IDs, 
-                max_concurrent=2,  # Reduce concurrency to avoid I/O issues
-                max_retries=3      # Add retries
+                max_concurrent=10, ##2,  ## Reduce concurrency to avoid I/O issues
+                max_retries=3      ## Add retries
             ))
             
             if download_success:
-                # Skip separate compression since we're using --gzip in fasterq-dump
                 
                 # Validation
-                if all_fastq_data_exist(Run_IDs, SRA_data_dir, check_compressed=True):
-                    SRA_download_end_time = time.time()
-                    SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-                    Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
-                    logging.info(Stage3TimeMessage)
+                if all_fastq_data_exist(Run_IDs, SRA_data_dir):
                     
-                    try:
-                        with open(stage_3_complete_file, "w") as f:
-                            f.write(Stage3TimeMessage)
-                    except IOError as e:
-                        logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
+                    ## Run parallel download pipeline with reduced concurrency and retries
+                    validation_success = asyncio.run(validate_sra_download_parallel(
+                        SRA_data_dir, 
+                        Run_IDs, 
+                        max_concurrent=10, ##2,  ## Reduce concurrency to avoid I/O issues
+                        max_retries=3      ## Add retries
+                    ))
+     
+                    if validation_success:
+                        SRA_download_end_time = time.time()
+                        SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
+                        Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
+                        logging.info(Stage3TimeMessage)
+                    
+                        try:
+                            with open(stage_3_complete_file, "w") as f:
+                                f.write(Stage3TimeMessage)
+                        except IOError as e:
+                            logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
                         
-                    if TEST_MODE:
-                        logging.info("Test mode: Stage 3 completed successfully")
+                        if TEST_MODE:
+                            logging.info("Test mode: Stage 3 completed successfully")
+                    else:
+                        logging.warning("Warning: All files downloaded but some downloads failed validation")
                 else:
-                    logging.warning("Warning: Some downloads failed validation")
+                    logging.warning("Warning: Some downloads failed.")
             else:
-                logging.warning("All SRA downloads failed. Skipping compression step.")
+                logging.warning("All SRA downloads failed.")
                 if TEST_MODE:
                     logging.info("Test mode: Stage 3 completed with download failures")
         except Exception as e:
             logging.error(f"Error in Stage 3: {str(e)}")
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
-    
+                
+                
     # Exit after stage 3 in test mode
     if TEST_MODE:
         logging.info("Test mode: All 3 stages completed. Exiting.")
         return  # Exit the main function
 
-    quit()
 
         
     #####################################################################################   
