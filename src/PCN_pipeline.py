@@ -345,7 +345,7 @@ def reference_genome_passes_md5_checksum(gbff_gz_file, md5_file):
     return my_md5_checksum == my_target_checksum
 
 
-async def download_single_genome(ftp_path, reference_genome_dir, log_file):
+async def download_single_genome(ftp_path, reference_genome_dir):
     """Download a single genome and its MD5 file"""
     my_full_accession = basename(ftp_path)
     my_base_filename = my_full_accession + "_genomic.gbff.gz"
@@ -396,7 +396,7 @@ async def download_single_genome(ftp_path, reference_genome_dir, log_file):
     return False
 
 
-async def async_download(ftp_paths, reference_genome_dir, log_file, max_concurrent=10):
+async def async_download(ftp_paths, reference_genome_dir, max_concurrent=10):
     """Download genomes in parallel using asyncio task pool with rate limiting"""
     ## Create a semaphore to limit concurrent downloads
     ## Adjust based on your network capacity
@@ -409,7 +409,7 @@ async def async_download(ftp_paths, reference_genome_dir, log_file, max_concurre
         """Download a single genome with rate and concurrency limits"""
         async with semaphore:  # Limit concurrent downloads
             async with rate_limiter.limit():  # Respect rate limits
-                return await download_single_genome(ftp_path, reference_genome_dir, log_file)
+                return await download_single_genome(ftp_path, reference_genome_dir)
     
     # Create tasks for all downloads
     tasks = []
@@ -426,7 +426,7 @@ async def async_download(ftp_paths, reference_genome_dir, log_file, max_concurre
     return results
 
 
-def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir, log_file):
+def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict, reference_genome_dir):
     """Download reference genomes for each genome in the RunID table"""
     ## Create reference genome directory if it doesn't exist
     os.makedirs(reference_genome_dir, exist_ok=True)
@@ -445,8 +445,7 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
 
     ## Run the async download
-    with open(log_file, 'w') as log_fh:  # Open log file for writing
-        asyncio.run(async_download(ftp_paths, reference_genome_dir, log_file))
+    asyncio.run(async_download(ftp_paths, reference_genome_dir))
     return
 
 
@@ -548,6 +547,65 @@ async def prefetch_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10
     return success_count
 
 
+async def validate_sra_download(run_id, SRA_data_dir):
+    """Validate the integrity of downloaded SRA data using vdb-validate."""
+    logging.info(f"Validating SRA download for {run_id}...")
+    
+    try:
+        # Run vdb-validate on the SRA accession
+        cmd = ["vdb-validate", os.path.join(SRA_data_dir, run_id)]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        stdout_text = stdout.decode() if stdout else ""
+        stderr_text = stderr.decode() if stderr else ""
+        
+        ## Check if validation was successful
+        if process.returncode == 0 and "is consistent" in stderr_text:
+            print("HELLO5")
+            logging.info(f"SRA validation successful for {run_id}")
+            return True
+        else:
+            error_msg = stderr_text.strip() or stdout_text.strip() or f"vdb-validate returned code {process.returncode}"
+            logging.warning(f"SRA validation failed for {run_id}: {error_msg}")
+            return False
+            
+    except Exception as e:
+        logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
+
+    return False
+
+
+async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
+    """Run vdb-validate in parallel with retry logic and integrity checks."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def validate_with_semaphore(run_id):
+        async with semaphore:
+            return await validate_sra_download(run_id, SRA_data_dir)
+
+    total_downloads = len(Run_IDs)
+    completed = 0
+    failed = 0
+
+    tasks = [validate_with_semaphore(run_id) for run_id in Run_IDs]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    print(results)
+    
+    # Count validated downloads
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully downloaded and validated {success_count}/{len(Run_IDs)} Run IDs")
+
+    if success_count == len(results):
+        return True ## all SRA files were validated.
+    return False
+
+
 async def unpack_fastq_reads(run_id, SRA_data_dir):
     """Unpack prefetched sra files into FASTQ."""
     logging.info(f"Unpacking {run_id} with command: fasterq-dump --split-files --skip-technical --temp {SRA_data_dir} --outdir {SRA_data_dir} --progress {run_id}")
@@ -602,65 +660,10 @@ async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
     # Count successful downloads
     success_count = sum(1 for r in results if r is True)
     logging.info(f"Successfully unpacked {success_count}/{len(Run_IDs)} Run IDs")
-    
-    return success_count
 
-
-async def validate_sra_download(run_id, SRA_data_dir):
-    """Validate the integrity of downloaded SRA data using vdb-validate."""
-    logging.info(f"Validating SRA download for {run_id}...")
-    
-    try:
-        # Run vdb-validate on the SRA accession
-        cmd = ["vdb-validate", os.path.join(SRA_data_dir, run_id)]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode() if stdout else ""
-        stderr_text = stderr.decode() if stderr else ""
-        
-        ## Check if validation was successful
-        if process.returncode == 0 and "is consistent" in stderr_text:
-            print("HELLO5")
-            logging.info(f"SRA validation successful for {run_id}")
-            return True
-        else:
-            error_msg = stderr_text.strip() or stdout_text.strip() or f"vdb-validate returned code {process.returncode}"
-            logging.warning(f"SRA validation failed for {run_id}: {error_msg}")
-            return False
-            
-    except Exception as e:
-        logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
-
+    if success_count == len(results):
+        return True ## all SRA files were unpacked.
     return False
-
-
-async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
-    """Run vdb-validate in parallel with retry logic and integrity checks."""
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def validate_with_semaphore(run_id):
-        async with semaphore:
-            return await validate_sra_download(run_id, SRA_data_dir)
-
-    total_downloads = len(Run_IDs)
-    completed = 0
-    failed = 0
-
-    tasks = [validate_with_semaphore(run_id) for run_id in Run_IDs]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    print(results)
-    
-    # Count validated downloads
-    success_count = sum(1 for r in results if r is True)
-    logging.info(f"Successfully downloaded and validated {success_count}/{len(Run_IDs)} Run IDs")
-    
-    return success_count
 
 
 def all_fastq_data_exist(run_ids, SRA_data_dir):
@@ -669,20 +672,28 @@ def all_fastq_data_exist(run_ids, SRA_data_dir):
     missing_run_ids = []
     
     for run_id in run_ids:
-        extensions = ['.fastq']
-            
         files_found = False
-        for ext in extensions:
-            paired_files = [
-                os.path.join(SRA_data_dir, f"{run_id}_1{ext}"),
-                os.path.join(SRA_data_dir, f"{run_id}_2{ext}")
-            ]
-            single_file = os.path.join(SRA_data_dir, f"{run_id}{ext}")
 
-            if (os.path.exists(paired_files[0]) and os.path.exists(paired_files[1])) or os.path.exists(single_file):
-                files_found = True
-                break
-                
+        paired_files = [
+            os.path.join(SRA_data_dir, f"{run_id}_1.fastq"),
+            os.path.join(SRA_data_dir, f"{run_id}_2.fastq")
+        ]
+        single_file = os.path.join(SRA_data_dir, f"{run_id}.fastq")
+
+        ## handle a couple weird corner cases from SRA.
+        if run_id == "SRR12988984":
+            paired_files = [
+                os.path.join(SRA_data_dir, f"{run_id}_3.fastq"),
+                os.path.join(SRA_data_dir, f"{run_id}_4.fastq")
+            ]
+        elif run_id == "SRR7353055":
+            single_file = os.path.join(SRA_data_dir, f"{run_id}_1.fastq"),
+
+        ## now check to see if the fastq files for this run_id exist on disk.
+        if (os.path.exists(paired_files[0]) and os.path.exists(paired_files[1])) or os.path.exists(single_file):
+            files_found = True
+            break
+            
         if not files_found:
             missing_run_ids.append(run_id)
     
@@ -2113,7 +2124,7 @@ def create_test_subset():
 
 
 def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_function, *stage_function_args):
-    if exists(stage_done_file):
+    if exists(stage_complete_file):
         print(f"{stage_complete_file} exists on disk-- skipping stage {stagenum}.")
     else:
         stage_start_time = time.time() ## Record the start time
@@ -2191,7 +2202,6 @@ def main():
         # Create necessary directories
         os.makedirs(reference_genome_dir, exist_ok=True)
         os.makedirs(SRA_data_dir, exist_ok=True)
-        reference_genome_log_file = "../results/test-reference_genome_fetching_log.txt"
         stage_1_complete_file = "../results/test-stage1.done"
         stage_2_complete_file = "../results/test-stage2.done"
         stage_3_complete_file = "../results/test-stage3.done"
@@ -2201,7 +2211,6 @@ def main():
         reference_genome_dir = "../data/NCBI-reference-genomes/"
         SRA_data_dir = "../data/SRA/"
         os.makedirs(SRA_data_dir, exist_ok=True)
-        reference_genome_log_file = "../results/reference_genome_fetching_log.txt"
         stage_1_complete_file = "../results/stage1.done"
         stage_2_complete_file = "../results/stage2.done"
         stage_3_complete_file = "../results/stage3.done"
@@ -2319,7 +2328,7 @@ def main():
         logging.info(f"Found {len(refseq_accession_to_ftp_path_dict)} FTP paths")
         
         ## now download the reference genomes.
-        fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir, reference_genome_log_file)
+        fetch_reference_genomes(RunID_table_csv, refseq_accession_to_ftp_path_dict, reference_genome_dir)
         refgenome_download_end_time = time.time()  ## Record the end time
         refgenome_download_execution_time = refgenome_download_end_time - refgenome_download_start_time
         Stage2TimeMessage = f"Stage 2 (reference genome download) execution time: {refgenome_download_execution_time} seconds\n"
@@ -2361,53 +2370,50 @@ def main():
             ))
 
             if prefetch_success:
-            
-                ## Run fasterq-dump in parallel
-                fasterq_dump_success = asyncio.run(unpack_fastq_reads_parallel(
+                ## then validate each sra file to check for data corruption.
+                validation_success = asyncio.run(validate_sra_download_parallel(
                     SRA_data_dir, 
                     Run_IDs, 
-                    max_concurrent=10
+                    max_concurrent=10,
                 ))
+                
+                if validation_success:
+                    ## Then run fasterq-dump in parallel
+                    fasterq_dump_success = asyncio.run(unpack_fastq_reads_parallel(
+                        SRA_data_dir, 
+                        Run_IDs, 
+                        max_concurrent=10
+                    ))
 
-                if fasterq_dump_success:
-                    ## then check to see that all fastq files exist on disk
-                    if all_fastq_data_exist(Run_IDs, SRA_data_dir):
-                        ## then validate each fastq file
-                        validation_success = asyncio.run(validate_sra_download_parallel(
-                            SRA_data_dir, 
-                            Run_IDs, 
-                            max_concurrent=10,
-                        ))
-
-                        if validation_success:
+                    if fasterq_dump_success:
+                        ## then check to see that all fastq files exist on disk
+                        if all_fastq_data_exist(Run_IDs, SRA_data_dir):
                             SRA_download_end_time = time.time()
                             SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
                             Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
                             logging.info(Stage3TimeMessage)
-
                             try:
-                                with open(stage_3_complete_file, "w") as f:
-                                    f.write(Stage3TimeMessage)
+                                with open(stage_3_complete_file, "w") as stage3_complete_log:
+                                    stage3_complete_log.write(Stage3TimeMessage)
+                                    stage3_complete_log.write("reference genomes downloaded successfully.\n")
                             except IOError as e:
                                 logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
-                        
                             if TEST_MODE:
                                 logging.info("Test mode: Stage 3 completed successfully")
                         else:
-                            logging.warning("Warning: All files downloaded but some downloads failed validation")
+                            logging.warning("Warning: All sra files downloaded and validated, but some fastq files may be missing")
                     else:
-                        logging.warning("Warning: All files prefetched but some files failed unpacking with fasterq-dump.")
+                        logging.error("Error: All files prefetched and validated but fasterq-dump failed in some cases.")
                 else:
-                    logging.warning("Warning: Some prefetch downloads failed.")
+                    logging.error("Error: Some prefetch downloads failed validation.. possible data corruption.")
             else:
-                logging.warning("All SRA downloads failed.")
+                logging.error("All prefetch of SRA data failed.")
                 if TEST_MODE:
                     logging.info("Test mode: Stage 3 completed with download failures")
         except Exception as e:
             logging.error(f"Error in Stage 3: {str(e)}")
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
-                
     
     ## Exit after stage 3 in test mode
     if TEST_MODE:
