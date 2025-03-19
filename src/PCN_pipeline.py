@@ -1009,9 +1009,9 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         if not exists(tempdir):
             os.mkdir(tempdir)
         
-        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "4", "--n-threads", "4", "--file-colors"]
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "6", "--n-threads", "6", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=6G --cpus-per-task=6 --wrap=" + "\"" + themisto_build_string + "\""
         if sys.platform == "linux": ## assume that we are running on DCC
             print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
             print(slurm_string)
