@@ -49,7 +49,13 @@ TEST_DOWNLOAD_LIMIT = 50  ## Increase from 10 to 50 for better testing
 """
 TODO list:
 
-1) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
+1) clean up code to be consistent throughout in the use of
+AnnotationAccessions and/or RefSeq_IDs as directory names.
+
+2) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
+and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
+
+3) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
 Example:
 
 filtered_df = (
@@ -61,12 +67,6 @@ filtered_df = (
       .join(df, on="AnnotationAccession", how="inner")
       .drop("AllTrue")
 )
-
-2) clean up code to be consistent throughout in the use of
-AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as directory names.
-
-3) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
-and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
 
 Additional notes: the following breseq runs did not finish within 24h with 16GB of memory and 1 core:
 GCF_000025625.1_ASM2562v1
@@ -743,9 +743,11 @@ def make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
     return
 
 
-def run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_index_dir, SRA_data_dir, results_dir):
+def run_kallisto_quant(RunID_table_csv, kallisto_index_dir, SRA_data_dir, results_dir):
     ## IMPORTANT: kallisto needs -l -s parameters supplied when run on single-end data.
     ## to avoid this complexity, I only process paired-end Illumina data, and skip single-end data altogether.
+    RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+    
     index_list = [x for x in os.listdir(kallisto_index_dir) if x.endswith(".idx")]
     for index_file in index_list:
         index_path = os.path.join(kallisto_index_dir, index_file)
@@ -766,8 +768,13 @@ def run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_index_dir, SRA_data_
             kallisto_quant_args = ["kallisto", "quant", "-t", "10", "-i", index_path, "-o", output_path, "-b", "100"] + read_path_arg_list
             kallisto_quant_string = " ".join(kallisto_quant_args)
             slurm_string = "sbatch -p scavenger --mem=16G --wrap=" + "\"" + kallisto_quant_string + "\""
-            print(slurm_string)
-            subprocess.run(slurm_string, shell=True)
+            if sys.platform == "linux": ## assume that we are running on DCC
+                print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+                print(slurm_string)
+                subprocess.run(slurm_string, shell=True)
+            else:
+                print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+                subprocess.run(kallisto_quant_string, shell=True)
     return
 
 
@@ -1939,19 +1946,14 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     ## iterate over the benchmark genomes to populate all_PIRA_estimates_DataFrame.
     for my_genome_ID in benchmark_genome_IDs:
 
-        ## add the "_genomic" suffix needed for the directory containing the alignments
-        my_genome_dirname = my_genome_ID + "_genomic"
-        ## IMPORTANT TODO: update the pipeline so that I don't have to do this kind of nonsense--
-        ## simplest solution is just to use the AnnotationAccession without the "_genomic" suffix throughout the code.
-
-        my_genome_dir = os.path.join(benchmark_alignment_dir, my_genome_dirname)
+        my_genome_dir = os.path.join(benchmark_alignment_dir, my_genome_ID)
         assert os.path.isdir(my_genome_dir) ## make sure this directory exists.
         
         ## make the dictionary mapping reads to the multiset of themisto replicon IDs.
         read_mapping_dict = parse_read_alignments(my_genome_dir)
 
         themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(
-            themisto_replicon_ref_dir, my_genome_dirname)
+            themisto_replicon_ref_dir, my_genome_ID)
 
         ## we need to run PIRA using ONLY the minimap2 alignment results.
         ## to do so, we need to pass in a data structure with some sensible default values.
@@ -2120,6 +2122,7 @@ def create_test_subset():
     # In test mode, use the test file instead of the original
     global prokaryotes_with_plasmids_file
     prokaryotes_with_plasmids_file = test_file
+    return
 
 
 def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_function, *stage_function_args):
@@ -2141,26 +2144,18 @@ def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_funct
     return
 
 
-################################################################################
-## Main pipeline code.
-
-def main():
-    
-    ## Configure logging
-    log_dir = "../results"  # Use the results directory which is already mounted
-    log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
-
+def configure_logging(log_file):
     try:
         logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler()  # Keep console output too
-            ]
-        )
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()  # Keep console output too
+        ]
+    )
     except IOError:
-        # If we can't write to the log file, just log to console
+        ## If we can't write to the log file, just log to console
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -2171,27 +2166,45 @@ def main():
         print("WARNING: Could not write to log file. Logging to console only.")
 
     logging.info("Starting the pipeline...")
+    return
+
+
+def initialize_test_mode():
+    ## set up for TEST_MODE
+    ## Test pysradb functionality
+    try:
+        test_pysradb_functionality()
+    except Exception as e:
+        logging.error(f"pysradb test failed: {str(e)}")
+        ## Continue anyway
     
-    # Test pysradb functionality
-    if TEST_MODE:
-        try:
-            test_pysradb_functionality()
-        except Exception as e:
-            logging.error(f"pysradb test failed: {str(e)}")
-            # Continue anyway
+    ## Handle test mode
+    logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
+    ## Create test subset
+    try:
+        create_test_subset()
+    except Exception as e:
+        logging.error(f"Error creating test subset: {str(e)}")
+        ## Continue anyway
+    return
+
+
+################################################################################
+## Main pipeline code.
+
+def main():
     
-    # Handle test mode
+    ## Configure logging
+    log_dir = "../results"  # Use the results directory which is already mounted
+    log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
+    configure_logging(log_file)
+
     if TEST_MODE:
-        logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
-        # Create test subset
-        try:
-            create_test_subset()
-        except Exception as e:
-            logging.error(f"Error creating test subset: {str(e)}")
-            # Continue anyway
+        initialize_test_mode()
     else:
         logging.info("Running in PRODUCTION MODE")
-
+    
+        
     ## define input and output files used in the pipeline.
     if TEST_MODE:
         prokaryotes_with_plasmids_file = "../results/test-prokaryotes-with-plasmids.txt"
@@ -2524,192 +2537,87 @@ def main():
     ## that apparently contain low PCN plasmids (PCN < 0.8), using minimap2.
     
     #####################################################################################
-    ## Stage 19: choose a set of 100 random genomes that contain plasmids with PCN < 1
+    ## Stage 15: choose a set of 100 random genomes that contain plasmids with PCN < 1
     ## and ReadCount > MIN_READ_COUNT.
-
-    stage_19_complete_file = "../results/stage19.done"
-    if exists(stage_19_complete_file):
-        print(f"{stage_19_complete_file} exists on disk-- skipping stage 19.")
-    else:
-        stage19_start_time = time.time()  ## Record the start time
-        ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
-        choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
-        stage19_end_time = time.time()  ## Record the end time
-        stage19_execution_time = stage19_end_time - stage19_start_time
-        Stage19TimeMessage = f"Stage 19 (choosing 100 random genomes with PCN < 1) execution time: {stage19_execution_time} seconds\n"
-        print(Stage19TimeMessage)
-        logging.info(Stage19TimeMessage)
-        with open(stage_19_complete_file, "w") as stage_19_complete_log:
-            stage_19_complete_log.write(Stage19TimeMessage)
-            stage_19_complete_log.write("stage 19 (choosing 100 random genomes with PCN < 1) finished successfully.\n")
-        return  ## Exit the main function
-
+    stage15_complete_file = "../results/stage15.done"
+    stage15_final_message = "Stage 15 (choosing 100 random genomes with PCN < 1) finished successfully.\n"
+    run_pipeline_stage(15, stage15_complete_file, stage15_final_message,
+                       ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
+                       choose_low_PCN_benchmark_genomes,
+                       PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
 
     #####################################################################################
-    ## Stage 20: run minimap2 on the set of 100 genomes chosen in Stage 19.
-
-    stage_20_complete_file = "../results/stage20.done"
-    if exists(stage_20_complete_file):
-        print(f"{stage_20_complete_file} exists on disk-- skipping stage 20.")
-    else:
-        stage20_start_time = time.time()  ## Record the start time
-        align_reads_for_benchmark_genomes_with_minimap2(
-            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
-            SRA_data_dir, benchmark_alignment_dir)
-        stage20_end_time = time.time()  ## Record the end time
-        stage20_execution_time = stage20_end_time - stage20_start_time
-        Stage20TimeMessage = f"Stage 20 (minimap2 full alignment) execution time: {stage20_execution_time} seconds\n"
-        print(Stage20TimeMessage)
-        logging.info(Stage20TimeMessage)
-        with open(stage_20_complete_file, "w") as stage_20_complete_log:
-            stage_20_complete_log.write(Stage20TimeMessage)
-            stage_20_complete_log.write("stage 20 (minimap2 full alignment) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 16: run minimap2 on the set of 100 genomes chosen in Stage 15.
+    stage16_complete_file = "../results/stage16.done"
+    stage16_final_message = "stage 16 (minimap2 full alignment) finished successfully.\n"
+    run_pipeline_stage(16, stage16_complete_file, stage16_final_message,
+                       align_reads_for_benchmark_genomes_with_minimap2,
+                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
+                       SRA_data_dir, benchmark_alignment_dir)
+    
+    #####################################################################################
+    ## Stage 17: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
+    stage17_complete_file = "../results/stage17.done"
+    stage17_final_message = "stage 17 (minimap2 results parsing) finished successfully.\n"
+    run_pipeline_stage(17, stage17_complete_file, stage17_final_message,
+                       benchmark_PCN_estimates_with_minimap2_alignments,
+                       PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
+                       themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
+    
+    #####################################################################################
+    ## Stage 18: run breseq on the set of 100 genomes chosen for benchmarking.
+    stage18_complete_file = "../results/stage18.done"
+    stage18_final_message = "stage 18 (running breseq) finished successfully.\n"
+    run_pipeline_stage(18, stage18_complete_file, stage18_final_message,
+                       benchmark_low_PCN_genomes_with_breseq,
+                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+                       reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
 
     #####################################################################################
-    ## Stage 21: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
-
-    stage_21_complete_file = "../results/stage21.done"
-    if exists(stage_21_complete_file):
-        print(f"{stage_21_complete_file} exists on disk-- skipping stage 21.")
-    else:
-        stage21_start_time = time.time()  ## Record the start time
-        benchmark_PCN_estimates_with_minimap2_alignments(
-            PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
-            themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
-        stage21_end_time = time.time()  ## Record the end time
-        stage21_execution_time = stage21_end_time - stage21_start_time
-        Stage21TimeMessage = f"Stage 21 (minimap2 results parsing) execution time: {stage21_execution_time} seconds\n"
-        print(Stage21TimeMessage)
-        logging.info(Stage21TimeMessage)
-        with open(stage_21_complete_file, "w") as stage_21_complete_log:
-            stage_21_complete_log.write(Stage21TimeMessage)
-            stage_21_complete_log.write("stage 21 (minimap2 results parsing) finished successfully.\n")
-        return  ## Exit the main function
-
-    #####################################################################################
-    ## Stage 22: run breseq on the set of 100 genomes chosen for benchmarking.
-
-    stage_22_complete_file = "../results/stage22.done"
-    if exists(stage_22_complete_file):
-        print(f"{stage_22_complete_file} exists on disk-- skipping stage 22.")
-    else:
-        stage22_start_time = time.time()  ## Record the start time
-        benchmark_low_PCN_genomes_with_breseq(
-            PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
-            reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
-        stage22_end_time = time.time()  ## Record the end time
-        stage22_execution_time = stage22_end_time - stage22_start_time
-        Stage22TimeMessage = f"Stage 22 (running breseq) execution time: {stage22_execution_time} seconds\n"
-        print(Stage22TimeMessage)
-        logging.info(Stage22TimeMessage)
-        with open(stage_22_complete_file, "w") as stage_22_complete_log:
-            stage_22_complete_log.write(Stage22TimeMessage)
-            stage_22_complete_log.write("stage 22 (running breseq) finished successfully.\n")
-        return  ## Exit the main function
-
-    #####################################################################################
-    ## Stage 23: parse breseq results on the set of 100 genomes chosen for benchmarking.
-
-    stage_23_complete_file = "../results/stage23.done"
-    if exists(stage_23_complete_file):
-        print(f"{stage_23_complete_file} exists on disk-- skipping stage 23.")
-    else:
-        stage23_start_time = time.time()  ## Record the start time
-        parse_breseq_results(breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
-        stage23_end_time = time.time()  ## Record the end time
-        stage23_execution_time = stage23_end_time - stage23_start_time
-        Stage23TimeMessage = f"Stage 23 (breseq results parsing) execution time: {stage23_execution_time} seconds\n"
-        print(Stage23TimeMessage)
-        logging.info(Stage23TimeMessage)
-        with open(stage_23_complete_file, "w") as stage_23_complete_log:
-            stage_23_complete_log.write(Stage23TimeMessage)
-            stage_23_complete_log.write("stage 23 (breseq results parsing) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 19: parse breseq results on the set of 100 genomes chosen for benchmarking.
+    stage19_complete_file = "../results/stage19.done"
+    stage19_final_message = "stage 19 (breseq results parsing) finished successfully.\n"
+    run_pipeline_stage(19, stage19_complete_file, stage19_final_message,
+                       parse_breseq_results,
+                       breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
 
     #####################################################################################
     ## Benchmark PIRA estimates against kallisto.
     #####################################################################################
-    ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
+    ## In order to benchmark accuracy, estimate PCN for a subset of 100 genomes
     ## that apparently contain low PCN plasmids (PCN < 0.8), using kallisto.
     #####################################################################################   
-    ## Stage 24: Make replicon-level FASTA reference files for copy number estimation using kallisto.
-    stage_24_complete_file = "../results/stage4.done"
-    if exists(stage_24_complete_file):
-        print(f"{stage_24_complete_file} exists on disk-- skipping stage 24.")
-    else:
-        make_replicon_fasta_ref_start_time = time.time()  ## Record the start time
-        make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
-        make_replicon_fasta_ref_end_time = time.time()  ## Record the end time
-        make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
-        Stage24TimeMessage = f"Stage 24 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
-
-        print(Stage24TimeMessage)
-        logging.info(Stage24TimeMessage)
-        with open(stage_24_complete_file, "w") as stage_24_complete_log:
-            stage_24_complete_log.write(Stage5TimeMessage)
-            stage_24_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
-        return  ## Exit the main function
-
+    ## Stage 20: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    stage20_complete_file = "../results/stage20.done"
+    stage20_final_message = "Stage 20 (FASTA reference sequences for kallisto) finished successfully.\n"
+    run_pipeline_stage(20, stage20_complete_file, stage20_final_message,
+                       make_NCBI_replicon_fasta_refs_for_kallisto,
+                       reference_genome_dir, kallisto_replicon_ref_dir)
+    
     #####################################################################################
-    ## Stage 25: Make replicon-level kallisto index files for each genome.
-    stage_25_complete_file = "../results/stage25.done"
-    if exists(stage_25_complete_file):
-        print(f"{stage_25_complete_file} exists on disk-- skipping stage 25.")
-    else:
-        make_kallisto_replicon_index_start_time = time.time()  ## Record the start time
-        make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
-        make_kallisto_replicon_index_end_time = time.time()  ## Record the end time
-        make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
-        Stage25TimeMessage = f"Stage 25 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
-        print(Stage25TimeMessage)
-        logging.info(Stage25TimeMessage)
-        with open(stage_25_complete_file, "w") as stage_25_complete_log:
-            stage_25_complete_log.write(Stage25TimeMessage)
-            stage_25_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
-        return  ## Exit the main function
-
+    ## Stage 21: Make replicon-level kallisto index files for each genome.
+    stage21_complete_file = "../results/stage21.done"
+    stage21_final_message = "Stage 21 (kallisto index file construction) finished successfully.\n"
+    run_pipeline_stage(21, stage21_complete_file, stage21_final_message,
+    make_NCBI_kallisto_indices,
+    kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
+    
     #####################################################################################
-    ## Stage 26: run kallisto quant on all genome data, on replicon-level indices.
+    ## Stage 22: run kallisto quant on all genome data, on replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
-    stage_26_complete_file = "../results/stage26.done"
-    if exists(stage_26_complete_file):
-        print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
-    else:
-        kallisto_quant_start_time = time.time()  ## Record the start time
-        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
-
-        kallisto_quant_end_time = time.time()  ## Record the end time
-        kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage26TimeMessage = f"Stage 26 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
-        print(Stage26TimeMessage)
-        logging.info(Stage26TimeMessage)
-        with open(stage_26_complete_file, "w") as stage_26_complete_log:
-            stage_26_complete_log.write(Stage26TimeMessage)
-            stage_26_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
-        return  ## Exit the main function
+    stage22_complete_file = "../results/stage22.done"
+    stage22_final_message = "Stage 22 (kallisto quant) finished successfully.\n"
+    run_pipeline_stage(22, stage22_complete_file, stage22_final_message,
+                       run_kallisto_quant,
+                       RunID_table_csv, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
     
     #####################################################################################
-    ## Stage 27: make a table of the estimated copy number for all chromosomes and plasmids.
-    stage_27_complete_file = "../results/stage27.done"
-    if exists(stage_27_complete_file):
-        print(f"{stage_27_complete_file} exists on disk-- skipping stage 27.")
-    else:
-        stage27_start_time = time.time()  ## Record the start time
-        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
-
-        stage27_end_time = time.time()  ## Record the end time
-        stage27_execution_time = stage27_end_time - stage27_start_time
-        Stage27TimeMessage = f"Stage 27 (tabulate all replicon copy numbers) execution time: {stage27_execution_time} seconds\n"
-        print(Stage27TimeMessage)
-        logging.info(Stage27TimeMessage)
-        with open(stage_27_complete_file, "w") as stage_27_complete_log:
-            stage_27_complete_log.write(Stage27TimeMessage)
-            stage_27_complete_log.write("stage 27 (tabulating all replicon copy numbers) finished successfully.\n")
-        return  ## Exit the main function
-
-    
+    ## Stage 23: make a table of the estimated copy number for all chromosomes and plasmids using kallisto
+    stage23_complete_file = "../results/stage23.done"
+    stage23_final_message = "Stage 23 (tabulating replicon copy numbers estimated by kallisto) finished successfully.\n"
+    run_pipeline_stage(23, stage23_complete_file, stage23_final_message,
+                       measure_kallisto_replicon_copy_numbers,
+                       kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
     return
 
 
