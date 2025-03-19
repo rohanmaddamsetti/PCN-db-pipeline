@@ -62,12 +62,10 @@ filtered_df = (
       .drop("AllTrue")
 )
 
-2) write a function to wrap my boilerplate 'staging' functions in main() to get rid of the repetitive boilerplate code.
-
-3) clean up code to be consistent throughout in the use of
+2) clean up code to be consistent throughout in the use of
 AnnotationAccessions, RefSeq_IDs, and/or 'AnnotationAccession_genomic' as directory names.
 
-4) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
+3) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
 and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
 
 Additional notes: the following breseq runs did not finish within 24h with 16GB of memory and 1 core:
@@ -220,7 +218,7 @@ def fetch_Run_IDs_with_pysradb(sra_id):
 
         ## If there is data associated with this accession (total_size > 0), the run_accession is valid,
         ##and  this is Illumina WGS data, then add to the list of run_accessions.
-        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and (("ILLUMINA" in my_SRA_metadata) or "Illumina" in my_SRA_metadata):
+        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and (("ILLUMINA" in my_SRA_metadata) or ("Illumina" in my_SRA_metadata)):
             run_ids.append(run_id)
 
     if run_ids:
@@ -567,17 +565,13 @@ async def validate_sra_download(run_id, SRA_data_dir):
         
         ## Check if validation was successful
         if process.returncode == 0 and "is consistent" in stderr_text:
-            print("HELLO5")
             logging.info(f"SRA validation successful for {run_id}")
             return True
         else:
             error_msg = stderr_text.strip() or stdout_text.strip() or f"vdb-validate returned code {process.returncode}"
             logging.warning(f"SRA validation failed for {run_id}: {error_msg}")
-            return False
-            
     except Exception as e:
         logging.error(f"Error validating SRA download for {run_id}: {str(e)}")
-
     return False
 
 
@@ -595,8 +589,6 @@ async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=1
 
     tasks = [validate_with_semaphore(run_id) for run_id in Run_IDs]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    print(results)
-    
     # Count validated downloads
     success_count = sum(1 for r in results if r is True)
     logging.info(f"Successfully downloaded and validated {success_count}/{len(Run_IDs)} Run IDs")
@@ -637,7 +629,6 @@ async def unpack_fastq_reads(run_id, SRA_data_dir):
             
     except Exception as e:
         logging.error(f"Exception unpacking {run_id}: {str(e)}")
-
     logging.error(f"Failed to fasterq-dump {run_id}")
     return False
 
@@ -701,7 +692,6 @@ def all_fastq_data_exist(run_ids, SRA_data_dir):
         logging.warning(f"Missing FASTQ files for {len(missing_run_ids)}/{len(run_ids)} Run IDs")
         logging.warning(f"Missing Run IDs: {', '.join(missing_run_ids)}...")
         return False
-
     return True
 
 
@@ -735,7 +725,7 @@ def make_NCBI_replicon_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outd
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
-        genome_id = gzfile.split(".gbff.gz")[0]
+        genome_id = gzfile.split(".gbff.gz")[0].replace("_genomic", "")
         fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
         generate_replicon_level_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
@@ -978,7 +968,8 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
-        genome_id = gzfile.split(".gbff.gz")[0]
+        ## get rid of the useless "_genomic" suffix here.
+        genome_id = gzfile.split(".gbff.gz")[0].replace("_genomic", "")
         fasta_outdir = os.path.join(themisto_fasta_ref_outdir, genome_id)
         ## make the fasta output directory if it does not exist.
         if not exists(fasta_outdir):
@@ -1017,16 +1008,24 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "4", "--n-threads", "4", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
         slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_build_string + "\""
-        print(slurm_string)
-        subprocess.run(slurm_string, shell=True)
+        if sys.platform == "linux": ## assume that we are running on DCC
+            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+            print(slurm_string)
+            subprocess.run(slurm_string, shell=True)
+        else:
+            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            subprocess.run(themisto_build_string, shell=True)
     return
 
 
-def run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
+def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_pseudoalignment_dir):
         os.mkdir(themisto_pseudoalignment_dir)
 
+    ## make this data structure
+    RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        
     ## each directory in themisto_index_dir is named after the genome_id of the given genome.
     genome_id_list = [x for x in os.listdir(themisto_index_dir)]
     for genome_id in genome_id_list:
@@ -2135,13 +2134,13 @@ def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_funct
         StageTimeMessage = f"Stage {stagenum} execution time: {stage_execution_time} seconds\n"
         print(StageTimeMessage)
         logging.info(StageTimeMessage)
-        with open(stage_complete_file, "w'") as stage_complete_log:
+        with open(stage_complete_file, 'w') as stage_complete_log:
             stage_complete_log.write(StageTimeMessage)
             stage_complete_log.write(final_message)
         quit() ## exit the main program after finishing each new stage.
     return
 
-    
+
 ################################################################################
 ## Main pipeline code.
 
@@ -2419,210 +2418,104 @@ def main():
     if TEST_MODE:
         logging.info("Test mode: All 3 stages completed. Exiting.")
         return  ## Exit the main function
-   
+
     #####################################################################################
-    ## Stage 4: tabulate the length of all chromosomes and plasmids.
+    ## Stage 4: make gbk ecological annotation file.
     stage4_complete_file = "../results/stage4.done"
-    stage4_final_message = "Stage 4 (tabulating all replicon lengths) finished successfully.\n"
-    run_pipeline_stage(4,
-                       stage4_complete_file,
-                       stage4_final_message,
+    stage4_final_message = "stage 4 (gbk ecological annotation) finished successfully.\n"
+    run_pipeline_stage(4, stage4_complete_file, stage4_final_message,
+                       make_gbk_annotation_table,
+                       reference_genome_dir, gbk_annotation_file)
+    
+    #####################################################################################
+    ## Stage 5: tabulate the length of all chromosomes and plasmids.
+    stage5_complete_file = "../results/stage5.done"
+    stage5_final_message = "Stage 5 (tabulating all replicon lengths) finished successfully.\n"
+    run_pipeline_stage(5, stage5_complete_file, stage5_final_message,
                        tabulate_NCBI_replicon_lengths,
                        reference_genome_dir, replicon_length_csv_file)
-      
+    
     #####################################################################################
-    ## Stage 9: Make FASTA input files for Themisto.
+    ## Stage 6: Make FASTA input files for Themisto.
     ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
     ## Then, write out a text file that contains the paths to the FASTA files of the genomes, one file per line.
     ## See documentation here: https://github.com/algbio/themisto.
-    stage_9_complete_file = "../results/stage9.done"
-    if exists(stage_9_complete_file):
-        print(f"{stage_9_complete_file} exists on disk-- skipping stage 9.")
-    else:
-        stage9_start_time = time.time()  ## Record the start time
-        make_NCBI_replicon_fasta_refs_for_themisto(reference_genome_dir, themisto_replicon_ref_dir)
-        stage9_end_time = time.time()  ## Record the end time
-        stage9_execution_time = stage9_end_time - stage9_start_time
-        Stage9TimeMessage = f"Stage 9 (making fasta references for themisto) execution time: {stage9_execution_time} seconds\n"
-        print(Stage9TimeMessage)
-        logging.info(Stage9TimeMessage)
-        with open(stage_9_complete_file, "w") as stage_9_complete_log:
-            stage_9_complete_log.write(Stage9TimeMessage)
-            stage_9_complete_log.write("stage 9 (making fasta references for themisto) finished successfully.\n")
-        return  ## Exit the main function
+    stage6_complete_file = "../results/stage6.done"
+    stage6_final_message = "Stage 6 (making fasta references for themisto) finished successfully.\n"
+    run_pipeline_stage(6, stage6_complete_file, stage6_final_message,
+                       make_NCBI_replicon_fasta_refs_for_themisto,
+                       reference_genome_dir, themisto_replicon_ref_dir)
         
     #####################################################################################
-    ## Stage 10: Build separate Themisto indices for each genome.
-    stage_10_complete_file = "../results/stage10.done"
-    if exists(stage_10_complete_file):
-        print(f"{stage_10_complete_file} exists on disk-- skipping stage 10.")
-    else:
-        stage10_start_time = time.time()  ## Record the start time
-        make_NCBI_themisto_indices(themisto_replicon_ref_dir, themisto_replicon_index_dir)
-        stage10_end_time = time.time()  ## Record the end time
-        stage10_execution_time = stage10_end_time - stage10_start_time
-        Stage10TimeMessage = f"Stage 10 (making indices for themisto) execution time: {stage10_execution_time} seconds\n"
-        print(Stage10TimeMessage)
-        logging.info(Stage10TimeMessage)
-        with open(stage_10_complete_file, "w") as stage_10_complete_log:
-            stage_10_complete_log.write(Stage10TimeMessage)
-            stage_10_complete_log.write("stage 10 (making indices for themisto) finished successfully.\n")
-        return  ## Exit the main function
-        
-    #####################################################################################
-    ## Stage 11: Pseudoalign reads for each genome against each Themisto index.
-
-    stage_11_complete_file = "../results/stage11.done"
-    if exists(stage_11_complete_file):
-        print(f"{stage_11_complete_file} exists on disk-- skipping stage 11.")
-    else:
-        stage11_start_time = time.time()  ## Record the start time
-        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)        
-        run_themisto_pseudoalign(RefSeq_to_SRA_RunList_dict, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
-        stage11_end_time = time.time()  ## Record the end time
-        stage11_execution_time = stage11_end_time - stage11_start_time
-        Stage11TimeMessage = f"Stage 11 (themisto pseudoalignment) execution time: {stage11_execution_time} seconds\n"
-        print(Stage11TimeMessage)
-        logging.info(Stage11TimeMessage)
-        with open(stage_11_complete_file, "w") as stage_11_complete_log:
-            stage_11_complete_log.write(Stage11TimeMessage)
-            stage_11_complete_log.write("stage 11 (themisto pseudoalignment) finished successfully.\n")
-        return  ## Exit the main function
-        
-    #####################################################################################
-    ## Stage 12: generate a large CSV file summarizing the themisto pseudoalignment read counts.
-    stage_12_complete_file = "../results/stage12.done"
-    if exists(stage_12_complete_file):
-        print(f"{stage_12_complete_file} exists on disk-- skipping stage 12.")
-    else:
-        stage12_start_time = time.time()  ## Record the start time
-        summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
-        stage12_end_time = time.time()  ## Record the end time
-        stage12_execution_time = stage12_end_time - stage12_start_time
-        Stage12TimeMessage = f"Stage 12 (themisto pseudoalignment summarization) execution time: {stage12_execution_time} seconds\n"
-        print(Stage12TimeMessage)
-        logging.info(Stage12TimeMessage)
-        with open(stage_12_complete_file, "w") as stage_12_complete_log:
-            stage_12_complete_log.write(Stage12TimeMessage)
-            stage_12_complete_log.write("stage 12 (themisto pseudoalignment summarization) finished successfully.\n")
-        return  ## Exit the main function
-        
-    #####################################################################################
-    ## Stage 13: estimate plasmid copy numbers using the themisto read counts.
-    stage_13_complete_file = "../results/stage13.done"
-    if exists(stage_13_complete_file):
-        print(f"{stage_13_complete_file} exists on disk-- skipping stage 13.")
-    else:
-        stage13_start_time = time.time()  ## Record the start time
-        ## Naive PCN calculation, ignoring multireplicon reads.
-        naive_themisto_PCN_estimation(themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
-
-        stage13_end_time = time.time()  ## Record the end time
-        stage13_execution_time = stage13_end_time - stage13_start_time
-        Stage13TimeMessage = f"Stage 13 (themisto PCN estimates) execution time: {stage13_execution_time} seconds\n"
-        print(Stage13TimeMessage)
-        logging.info(Stage13TimeMessage)
-        with open(stage_13_complete_file, "w") as stage_13_complete_log:
-            stage_13_complete_log.write(Stage13TimeMessage)
-            stage_13_complete_log.write("stage 13 (themisto PCN estimates) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 7: Build separate Themisto indices for each genome.
+    stage7_complete_file = "../results/stage7.done"
+    stage7_final_message = "Stage 7 (making indices for themisto) finished successfully.\n"
+    run_pipeline_stage(7, stage7_complete_file, stage6_final_message,
+                       make_NCBI_themisto_indices,
+                       themisto_replicon_ref_dir, themisto_replicon_index_dir)
 
     #####################################################################################
-    ## Stage 14: make gbk ecological annotation file.
-    stage_14_complete_file = "../results/stage14.done"
-    if exists(stage_14_complete_file):
-        print(f"{stage_14_complete_file} exists on disk-- skipping stage 14.")
-    else:
-        stage14_start_time = time.time()  ## Record the start time
-        make_gbk_annotation_table(reference_genome_dir, gbk_annotation_file)
-        stage14_end_time = time.time()  ## Record the end time
-        stage14_execution_time = stage14_end_time - stage14_start_time
-        Stage14TimeMessage = f"Stage 14 (gbk ecological annotation) execution time: {stage14_execution_time} seconds\n"
-        print(Stage14TimeMessage)
-        logging.info(Stage14TimeMessage)
-        with open(stage_14_complete_file, "w") as stage_14_complete_log:
-            stage_14_complete_log.write(Stage14TimeMessage)
-            stage_14_complete_log.write("stage 14 (gbk ecological annotation) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 8: Pseudoalign reads for each genome against each Themisto index.
+    stage8_complete_file = "../results/stage8.done"
+    stage8_final_message = "Stage 8 (themisto pseudoalignment) finished successfully.\n"
+    run_pipeline_stage(8, stage8_complete_file, stage8_final_message,
+                       run_themisto_pseudoalign,
+                       RunID_table_csv, themisto_replicon_index_dir, SRA_data_dir, themisto_pseudoalignment_dir)
     
+    #####################################################################################
+    ## Stage 9: generate a large CSV file summarizing the themisto pseudoalignment read counts.
+    stage9_complete_file = "../results/stage9.done"
+    stage9_final_message = "Stage 9 (Themisto pseudoalignment summarization) finished successfully.\n"
+    run_pipeline_stage(9, stage9_complete_file, stage9_final_message,
+                       summarize_themisto_pseudoalignment_results,
+                       themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path)
+    
+    #####################################################################################
+    ## Stage 10: estimate plasmid copy numbers using the themisto read counts.
+    stage10_complete_file = "../results/stage10.done"
+    stage10_final_message = "Stage 10 (naive Themisto PCN estimates) finished successfully.\n"
+    run_pipeline_stage(10, stage10_complete_file, stage10_final_message,
+    ## Naive PCN calculation, ignoring multireplicon reads.
+                       naive_themisto_PCN_estimation,
+                       themisto_results_csvfile_path, replicon_length_csv_file, naive_themisto_PCN_csv_file)
+
     #####################################################################################
     ## Use Probabilistic Iterative Read Assignment (PIRA) to improve PCN estimates.
     #####################################################################################
-    ## The Naive PCN calculation in Stage 16 generates the initial PCN vectors and saves them on disk.
+    ## The Naive PCN calculation in Stage 10 generates the initial PCN vectors and saves them on disk.
     
     #####################################################################################
-    ## Stage 15: filter fastq reads for multireads.
-    stage_15_complete_file = "../results/stage15.done"
-    if exists(stage_15_complete_file):
-        print(f"{stage_15_complete_file} exists on disk-- skipping stage 15.")
-    else:
-        stage15_start_time = time.time()  ## Record the start time
-        filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
-        stage15_end_time = time.time()  ## Record the end time
-        stage15_execution_time = stage15_end_time - stage15_start_time
-        Stage15TimeMessage = f"Stage 15 (fastq read filtering) execution time: {stage15_execution_time} seconds\n"
-        print(Stage15TimeMessage)
-        logging.info(Stage15TimeMessage)
-        with open(stage_15_complete_file, "w") as stage_15_complete_log:
-            stage_15_complete_log.write(Stage15TimeMessage)
-            stage_15_complete_log.write("stage 15 (fastq read filtering) finished successfully.\n")
-        return  ## Exit the main function
-    
-    #####################################################################################
-    ## Stage 16: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
-    stage_16_complete_file = "../results/stage19.done"
-    if exists(stage_16_complete_file):
-        print(f"{stage_16_complete_file} exists on disk-- skipping stage 16.")
-    else:
-        stage16_start_time = time.time()  ## Record the start time
-        make_fasta_reference_genomes_for_minimap2(themisto_replicon_ref_dir)
-        stage16_end_time = time.time()  ## Record the end time
-        stage16_execution_time = stage16_end_time - stage16_start_time
-        Stage16TimeMessage = f"Stage 16 (making FASTA reference genomes for multiread alignment) execution time: {stage16_execution_time} seconds\n"
-        print(Stage16TimeMessage)
-        logging.info(Stage16TimeMessage)
-        with open(stage_16_complete_file, "w") as stage_16_complete_log:
-            stage_16_complete_log.write(Stage16TimeMessage)
-            stage_16_complete_log.write("stage 16 (making FASTA reference genomes for multiread alignment) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 11: filter fastq reads for multireads.
+    stage11_complete_file = "../results/stage11.done"
+    stage11_final_message = "Stage 11 (fastq read filtering) finished successfully.\n"
+    run_pipeline_stage(11, stage11_complete_file, stage11_final_message,
+                       filter_fastq_files_for_multireads,
+                       multiread_data_dir, themisto_pseudoalignment_dir, SRA_data_dir)
 
     #####################################################################################
-    ## Stage 17: for each genome, align multireads to the replicons with minimap2.
-    stage_17_complete_file = "../results/stage17.done"
-    if exists(stage_17_complete_file):
-        print(f"{stage_17_complete_file} exists on disk-- skipping stage 17.")
-    else:
-        stage17_start_time = time.time()  ## Record the start time
-        align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
-        stage17_end_time = time.time()  ## Record the end time
-        stage17_execution_time = stage17_end_time - stage17_start_time
-        Stage17TimeMessage = f"Stage 17 (aligning multireads with minimap2) execution time: {stage17_execution_time} seconds\n"
-        print(Stage17TimeMessage)
-        logging.info(Stage17TimeMessage)
-        with open(stage_17_complete_file, "w") as stage_17_complete_log:
-            stage_17_complete_log.write(Stage17TimeMessage)
-            stage_17_complete_log.write("stage 17 (aligning multireads with minimap2) finished successfully.\n")
-        return  ## Exit the main function
+    ## Stage 12: make FASTA reference genomes with Themisto Replicon IDs for multiread mapping with minimap2.
+    stage12_complete_file = "../results/stage12.done"
+    stage12_final_message = "Stage 12 (making FASTA reference genomes for multiread alignment) finished successfully.\n"
+    run_pipeline_stage(12, stage12_complete_file, stage12_final_message,
+                       make_fasta_reference_genomes_for_minimap2,
+                       themisto_replicon_ref_dir)
 
     #####################################################################################
-    ## Stage 18: Run PIRA.
+    ## Stage 13: for each genome, align multireads to the replicons with minimap2.
+    stage13_complete_file = "../results/stage13.done"
+    stage13_final_message = "Stage 13 (aligning multireads with minimap2) finished successfully.\n"
+    run_pipeline_stage(13, stage13_complete_file, stage13_final_message,
+                       align_multireads_with_minimap2,
+                       themisto_replicon_ref_dir, multiread_data_dir, multiread_alignment_dir)
+
+    #####################################################################################
+    ## Stage 14: Run PIRA.
     ## For each genome, parse minimap2 results to form the match matrix and refine the initial PCN guesses.
-
-    stage_18_complete_file = "../results/stage18.done"
-    if exists(stage_18_complete_file):
-        print(f"{stage_18_complete_file} exists on disk-- skipping stage 18.")
-    else:
-        stage18_start_time = time.time()  ## Record the start time
-        run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
-        stage18_end_time = time.time()  ## Record the end time
-        stage18_execution_time = stage18_end_time - stage18_start_time
-        Stage18TimeMessage = f"Stage 18 (parsing multiread alignments and running PIRA) execution time: {stage18_execution_time} seconds\n"
-        print(Stage18TimeMessage)
-        logging.info(Stage18TimeMessage)
-        with open(stage_18_complete_file, "w") as stage_18_complete_log:
-            stage_18_complete_log.write(Stage18TimeMessage)
-            stage_18_complete_log.write("stage 18 (parsing multiread alignments and running PIRA) finished successfully.\n")
-        return  ## Exit the main function
+    stage14_complete_file = "../results/stage14.done"
+    stage14_final_message = "Stage 14 (parsing multiread alignments and running PIRA) finished successfully.\n"
+    run_pipeline_stage(14, stage14_complete_file, stage14_final_message,
+                       run_PIRA_on_all_genomes,
+                       multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
 
     #####################################################################################
     ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2.
