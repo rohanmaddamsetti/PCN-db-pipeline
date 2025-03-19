@@ -2117,7 +2117,7 @@ def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_funct
         print(f"{stage_complete_file} exists on disk-- skipping stage {stagenum}.")
     else:
         stage_start_time = time.time() ## Record the start time
-        ## run the passed in function
+        ## run the passed in function with its arguments for this stage.
         stage_function(*stage_function_args)
         stage_end_time = time.time() ## Record the end time.
         stage_execution_time = stage_end_time - stage_start_time
@@ -2127,8 +2127,9 @@ def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_funct
         with open(stage_complete_file, "w'") as stage_complete_log:
             stage_complete_log.write(StageTimeMessage)
             stage_complete_log.write(final_message)
+        quit() ## exit the main program after finishing each new stage.
     return
-        
+
     
 ################################################################################
 ## Main pipeline code.
@@ -2415,22 +2416,14 @@ def main():
    
     #####################################################################################
     ## Stage 4: tabulate the length of all chromosomes and plasmids.
-    stage_4_complete_file = "../results/stage4.done"
-    if exists(stage_4_complete_file):
-        print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
-    else:
-        stage4_start_time = time.time()  ## Record the start time
-        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
-        stage4_end_time = time.time()  ## Record the end time
-        stage4_execution_time = stage4_end_time - stage4_start_time
-        Stage4TimeMessage = f"Stage 4 (tabulate all replicon lengths) execution time: {stage4_execution_time} seconds\n"
-        print(Stage4TimeMessage)
-        logging.info(Stage4TimeMessage)
-        with open(stage_4_complete_file, "w") as stage_4_complete_log:
-            stage_4_complete_log.write(Stage4TimeMessage)
-            stage_4_complete_log.write("stage 4 (tabulating all replicon lengths) finished successfully.\n")
-        return  ## Exit the main function
-            
+    stage4_complete_file = "../results/stage4.done"
+    stage4_final_message = "Stage 4 (tabulating all replicon lengths) finished successfully.\n"
+    run_pipeline_stage(4,
+                       stage4_complete_file,
+                       stage4_final_message,
+                       tabulate_NCBI_replicon_lengths,
+                       reference_genome_dir, replicon_length_csv_file)
+      
     #####################################################################################
     ## Stage 9: Make FASTA input files for Themisto.
     ## Write out separate fasta files for each replicon in each genome, in a directory for each genome.
