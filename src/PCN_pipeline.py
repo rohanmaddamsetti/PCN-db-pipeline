@@ -113,6 +113,34 @@ class RateLimiter:
 ################################################################################
 ## Functions.
 
+def test_pysradb_functionality():
+    """Test if pysradb is working correctly with a known SRA ID."""
+    test_sra_id = "SRS7822362"  
+    logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
+    
+    try:
+        # Run the command directly
+        cmd = f"pysradb metadata {test_sra_id}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            logging.info(f"pysradb test successful. Output:\n{result.stdout}")
+            
+            # Try to parse the output
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                logging.info(f"Found {len(lines)-1} potential Run IDs")
+                for line in lines[1:]:
+                    logging.info(f"Potential Run ID line: {line}")
+            else:
+                logging.warning("No data rows in pysradb output")
+        else:
+            logging.error(f"pysradb test failed with error: {result.stderr}")
+    except Exception as e:
+        logging.error(f"Error testing pysradb: {e}")
+    return
+
+
 def get_SRA_ID_from_RefSeqID(refseq_id):
     """Fetch the SRA ID corresponding to a RefSeq accession ID."""
     logging.info(f"Getting SRA ID for {refseq_id}...")
@@ -142,34 +170,6 @@ def get_SRA_ID_from_RefSeqID(refseq_id):
     except subprocess.CalledProcessError as e:
         logging.error(f"Error fetching SRA ID for {refseq_id}: {e.output.decode()}")
         return "NA"
-
-
-def test_pysradb_functionality():
-    """Test if pysradb is working correctly with a known SRA ID."""
-    test_sra_id = "SRS7822362"  
-    logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
-    
-    try:
-        # Run the command directly
-        cmd = f"pysradb metadata {test_sra_id}"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            logging.info(f"pysradb test successful. Output:\n{result.stdout}")
-            
-            # Try to parse the output
-            lines = result.stdout.strip().split('\n')
-            if len(lines) > 1:
-                logging.info(f"Found {len(lines)-1} potential Run IDs")
-                for line in lines[1:]:
-                    logging.info(f"Potential Run ID line: {line}")
-            else:
-                logging.warning("No data rows in pysradb output")
-        else:
-            logging.error(f"pysradb test failed with error: {result.stderr}")
-    except Exception as e:
-        logging.error(f"Error testing pysradb: {e}")
-    return
 
 
 def fetch_Run_IDs_with_pysradb(sra_id):
@@ -490,46 +490,6 @@ def get_Run_IDs_from_RunID_table(RunID_table_csv):
             test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
             return test_run_ids[:TEST_DOWNLOAD_LIMIT]
         return []
-
-
-def old_download_fastq_reads(SRA_data_dir, Run_IDs):
-        """
-        the Run_ID has to be the last part of the directory.
-        see documentation here:
-        https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump
-        """
-        for Run_ID in Run_IDs:
-            prefetch_dir_path = os.path.join(SRA_data_dir, Run_ID)
-            if os.path.exists(prefetch_dir_path): ## skip if we have already prefetched the read data.
-                continue
-            ## prefetch will create the prefetch_dir_path automatically-- give it the SRA_data_dir.
-            ## default max-size is 20G, but some datasets are larger. So kick up the max-size.
-            prefetch_args = ["prefetch", "--max-size", "100G", Run_ID, "-O", SRA_data_dir]
-            print("Running prefetch.")
-            print (" ".join(prefetch_args))
-            subprocess.run(prefetch_args)
-        print("prefetch completed.")
-        my_cwd = os.getcwd()
-        os.chdir(SRA_data_dir)
-        for Run_ID in Run_IDs:
-            print("Validating data integrity.")
-            vdb_validate_args = ["vdb-validate", Run_ID]
-            print(" ".join(vdb_validate_args))
-            subprocess.run(vdb_validate_args)
-            ## TODO: handle cases where the data has been corrupted.
-            sra_fastq_file_1 = Run_ID + "_1.fastq"
-            sra_fastq_file_2 = Run_ID + "_2.fastq"
-            ## since we ran os.chdir(SRA_data_dir), this next line should work right.
-            if os.path.exists(sra_fastq_file_1) and os.path.exists(sra_fastq_file_2):
-                continue
-            else:
-                print ("Generating fastq for: " + Run_ID)
-                fasterq_dump_args = ["fasterq-dump", "--threads", "10", "-O", SRA_data_dir, Run_ID]
-                print(" ".join(fasterq_dump_args))
-                subprocess.run(fasterq_dump_args)
-        ## now change back to original working directory.
-        os.chdir(my_cwd)
-        return
 
 
 async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=3):
@@ -2152,14 +2112,28 @@ def create_test_subset():
     prokaryotes_with_plasmids_file = test_file
 
 
-
+def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_function, *stage_function_args):
+    if exists(stage_done_file):
+        print(f"{stage_complete_file} exists on disk-- skipping stage {stagenum}.")
+    else:
+        stage_start_time = time.time() ## Record the start time
+        ## run the passed in function
+        stage_function(*stage_function_args)
+        stage_end_time = time.time() ## Record the end time.
+        stage_execution_time = stage_end_time - stage_start_time
+        StageTimeMessage = f"Stage {stagenum} execution time: {stage_execution_time} seconds\n"
+        print(StageTimeMessage)
+        logging.info(StageTimeMessage)
+        with open(stage_complete_file, "w'") as stage_complete_log:
+            stage_complete_log.write(StageTimeMessage)
+            stage_complete_log.write(final_message)
+    return
+        
+    
 ################################################################################
+## Main pipeline code.
 
 def main():
-    
-    # Create a global rate limiter instance
-    ncbi_rate_limiter = RateLimiter(calls_per_minute=10)  # Adjust as needed
-
     
     ## Configure logging
     log_dir = "../results"  # Use the results directory which is already mounted
@@ -2207,7 +2181,6 @@ def main():
     else:
         logging.info("Running in PRODUCTION MODE")
 
-
     ## define input and output files used in the pipeline.
     if TEST_MODE:
         prokaryotes_with_plasmids_file = "../results/test-prokaryotes-with-plasmids.txt"
@@ -2231,7 +2204,6 @@ def main():
         stage_1_complete_file = "../results/stage1.done"
         stage_2_complete_file = "../results/stage2.done"
         stage_3_complete_file = "../results/stage3.done"
-
 
     ## directories for replicon-level copy number estimation with kallisto.
     kallisto_replicon_ref_dir = "../results/kallisto_replicon_references/"
@@ -2327,7 +2299,6 @@ def main():
         if TEST_MODE:
             logging.info("Test mode: Stage 1 completed successfully")
 
-    
     #####################################################################################
     ## Stage 2: download reference genomes for each of the complete bacterial genomes containing plasmids,
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
@@ -2441,102 +2412,23 @@ def main():
     if TEST_MODE:
         logging.info("Test mode: All 3 stages completed. Exiting.")
         return  ## Exit the main function
-
-
-        
-    #####################################################################################   
-    ## Stage 4: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+   
+    #####################################################################################
+    ## Stage 4: tabulate the length of all chromosomes and plasmids.
     stage_4_complete_file = "../results/stage4.done"
     if exists(stage_4_complete_file):
         print(f"{stage_4_complete_file} exists on disk-- skipping stage 4.")
     else:
-        make_replicon_fasta_ref_start_time = time.time()  ## Record the start time
-        make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
-        make_replicon_fasta_ref_end_time = time.time()  ## Record the end time
-        make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
-        Stage4TimeMessage = f"Stage 4 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
-
+        stage4_start_time = time.time()  ## Record the start time
+        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
+        stage4_end_time = time.time()  ## Record the end time
+        stage4_execution_time = stage4_end_time - stage4_start_time
+        Stage4TimeMessage = f"Stage 4 (tabulate all replicon lengths) execution time: {stage4_execution_time} seconds\n"
         print(Stage4TimeMessage)
         logging.info(Stage4TimeMessage)
         with open(stage_4_complete_file, "w") as stage_4_complete_log:
-            stage_4_complete_log.write(Stage5TimeMessage)
-            stage_4_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
-        return  ## Exit the main function
-
-    #####################################################################################
-    ## Stage 5: Make replicon-level kallisto index files for each genome.
-    stage_5_complete_file = "../results/stage5.done"
-    if exists(stage_5_complete_file):
-        print(f"{stage_5_complete_file} exists on disk-- skipping stage 5.")
-    else:
-        make_kallisto_replicon_index_start_time = time.time()  ## Record the start time
-        make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
-        make_kallisto_replicon_index_end_time = time.time()  ## Record the end time
-        make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
-        Stage5TimeMessage = f"Stage 5 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
-        print(Stage5TimeMessage)
-        logging.info(Stage5TimeMessage)
-        with open(stage_5_complete_file, "w") as stage_5_complete_log:
-            stage_5_complete_log.write(Stage5TimeMessage)
-            stage_5_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
-        return  ## Exit the main function
-
-    #####################################################################################
-    ## Stage 6: run kallisto quant on all genome data, on replicon-level indices.
-    ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
-    stage_6_complete_file = "../results/stage6.done"
-    if exists(stage_6_complete_file):
-        print(f"{stage_6_complete_file} exists on disk-- skipping stage 6.")
-    else:
-        kallisto_quant_start_time = time.time()  ## Record the start time
-        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
-        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
-
-        kallisto_quant_end_time = time.time()  ## Record the end time
-        kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
-        Stage6TimeMessage = f"Stage 6 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
-        print(Stage6TimeMessage)
-        logging.info(Stage6TimeMessage)
-        with open(stage_6_complete_file, "w") as stage_6_complete_log:
-            stage_6_complete_log.write(Stage6TimeMessage)
-            stage_6_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
-        return  ## Exit the main function
-    
-    #####################################################################################
-    ## Stage 7: make a table of the estimated copy number for all chromosomes and plasmids.
-    stage_7_complete_file = "../results/stage7.done"
-    if exists(stage_7_complete_file):
-        print(f"{stage_7_complete_file} exists on disk-- skipping stage 7.")
-    else:
-        stage7_start_time = time.time()  ## Record the start time
-        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
-
-        stage7_end_time = time.time()  ## Record the end time
-        stage7_execution_time = stage7_end_time - stage7_start_time
-        Stage7TimeMessage = f"Stage 7 (tabulate all replicon copy numbers) execution time: {stage7_execution_time} seconds\n"
-        print(Stage7TimeMessage)
-        logging.info(Stage7TimeMessage)
-        with open(stage_7_complete_file, "w") as stage_7_complete_log:
-            stage_7_complete_log.write(Stage7TimeMessage)
-            stage_7_complete_log.write("stage 7 (tabulating all replicon copy numbers) finished successfully.\n")
-        return  ## Exit the main function
-
-    #####################################################################################
-    ## Stage 8: tabulate the length of all chromosomes and plasmids.
-    stage_8_complete_file = "../results/stage8.done"
-    if exists(stage_8_complete_file):
-        print(f"{stage_8_complete_file} exists on disk-- skipping stage 8.")
-    else:
-        stage8_start_time = time.time()  ## Record the start time
-        tabulate_NCBI_replicon_lengths(reference_genome_dir, replicon_length_csv_file)
-        stage8_end_time = time.time()  ## Record the end time
-        stage8_execution_time = stage8_end_time - stage8_start_time
-        Stage8TimeMessage = f"Stage 8 (tabulate all replicon lengths) execution time: {stage8_execution_time} seconds\n"
-        print(Stage8TimeMessage)
-        logging.info(Stage8TimeMessage)
-        with open(stage_8_complete_file, "w") as stage_8_complete_log:
-            stage_8_complete_log.write(Stage8TimeMessage)
-            stage_8_complete_log.write("stage 8 (tabulating all replicon lengths) finished successfully.\n")
+            stage_4_complete_log.write(Stage4TimeMessage)
+            stage_4_complete_log.write("stage 4 (tabulating all replicon lengths) finished successfully.\n")
         return  ## Exit the main function
             
     #####################################################################################
@@ -2842,7 +2734,90 @@ def main():
             stage_23_complete_log.write(Stage23TimeMessage)
             stage_23_complete_log.write("stage 23 (breseq results parsing) finished successfully.\n")
         return  ## Exit the main function
-        
+
+    #####################################################################################
+    ## Benchmark PIRA estimates against kallisto.
+    #####################################################################################
+    ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
+    ## that apparently contain low PCN plasmids (PCN < 0.8), using kallisto.
+    #####################################################################################   
+    ## Stage 24: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    stage_24_complete_file = "../results/stage4.done"
+    if exists(stage_24_complete_file):
+        print(f"{stage_24_complete_file} exists on disk-- skipping stage 24.")
+    else:
+        make_replicon_fasta_ref_start_time = time.time()  ## Record the start time
+        make_NCBI_replicon_fasta_refs_for_kallisto(reference_genome_dir, kallisto_replicon_ref_dir)
+        make_replicon_fasta_ref_end_time = time.time()  ## Record the end time
+        make_replicon_fasta_ref_execution_time = make_replicon_fasta_ref_end_time - make_replicon_fasta_ref_start_time
+        Stage24TimeMessage = f"Stage 24 (making replicon-level FASTA references for kallisto) execution time: {make_replicon_fasta_ref_execution_time} seconds\n"
+
+        print(Stage24TimeMessage)
+        logging.info(Stage24TimeMessage)
+        with open(stage_24_complete_file, "w") as stage_24_complete_log:
+            stage_24_complete_log.write(Stage5TimeMessage)
+            stage_24_complete_log.write("Replicon-level FASTA reference sequences for kallisto finished successfully.\n")
+        return  ## Exit the main function
+
+    #####################################################################################
+    ## Stage 25: Make replicon-level kallisto index files for each genome.
+    stage_25_complete_file = "../results/stage25.done"
+    if exists(stage_25_complete_file):
+        print(f"{stage_25_complete_file} exists on disk-- skipping stage 25.")
+    else:
+        make_kallisto_replicon_index_start_time = time.time()  ## Record the start time
+        make_NCBI_kallisto_indices(kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
+        make_kallisto_replicon_index_end_time = time.time()  ## Record the end time
+        make_kallisto_replicon_index_execution_time = make_kallisto_replicon_index_end_time - make_kallisto_replicon_index_start_time
+        Stage25TimeMessage = f"Stage 25 (making replicon-indices for kallisto) execution time: {make_kallisto_replicon_index_execution_time} seconds\n"
+        print(Stage25TimeMessage)
+        logging.info(Stage25TimeMessage)
+        with open(stage_25_complete_file, "w") as stage_25_complete_log:
+            stage_25_complete_log.write(Stage25TimeMessage)
+            stage_25_complete_log.write("kallisto replicon-index file construction finished successfully.\n")
+        return  ## Exit the main function
+
+    #####################################################################################
+    ## Stage 26: run kallisto quant on all genome data, on replicon-level indices.
+    ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
+    stage_26_complete_file = "../results/stage26.done"
+    if exists(stage_26_complete_file):
+        print(f"{stage_26_complete_file} exists on disk-- skipping stage 26.")
+    else:
+        kallisto_quant_start_time = time.time()  ## Record the start time
+        RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
+        run_kallisto_quant(RefSeq_to_SRA_RunList_dict, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
+
+        kallisto_quant_end_time = time.time()  ## Record the end time
+        kallisto_quant_execution_time = kallisto_quant_end_time - kallisto_quant_start_time
+        Stage26TimeMessage = f"Stage 26 (kallisto quant replicon-level) execution time: {kallisto_quant_execution_time} seconds\n"
+        print(Stage26TimeMessage)
+        logging.info(Stage26TimeMessage)
+        with open(stage_26_complete_file, "w") as stage_26_complete_log:
+            stage_26_complete_log.write(Stage26TimeMessage)
+            stage_26_complete_log.write("kallisto quant, replicon-level finished successfully.\n")
+        return  ## Exit the main function
+    
+    #####################################################################################
+    ## Stage 27: make a table of the estimated copy number for all chromosomes and plasmids.
+    stage_27_complete_file = "../results/stage27.done"
+    if exists(stage_27_complete_file):
+        print(f"{stage_27_complete_file} exists on disk-- skipping stage 27.")
+    else:
+        stage27_start_time = time.time()  ## Record the start time
+        measure_kallisto_replicon_copy_numbers(kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
+
+        stage27_end_time = time.time()  ## Record the end time
+        stage27_execution_time = stage27_end_time - stage27_start_time
+        Stage27TimeMessage = f"Stage 27 (tabulate all replicon copy numbers) execution time: {stage27_execution_time} seconds\n"
+        print(Stage27TimeMessage)
+        logging.info(Stage27TimeMessage)
+        with open(stage_27_complete_file, "w") as stage_27_complete_log:
+            stage_27_complete_log.write(Stage27TimeMessage)
+            stage_27_complete_log.write("stage 27 (tabulating all replicon copy numbers) finished successfully.\n")
+        return  ## Exit the main function
+
+    
     return
 
 
