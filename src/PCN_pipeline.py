@@ -52,10 +52,7 @@ TODO list:
 1) clean up code to be consistent throughout in the use of
 AnnotationAccessions and/or RefSeq_IDs as directory names.
 
-2) refactor code as needed in benchmark_PCN_estimates_with_minimap2_alignments()
-and in run_PIRA_on_all_genomes() to reuse code and avoid duplication.
-
-3) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
+2) fix my polars dataframe code style to use parentheses, and start lines with ".join" and so forth.
 Example:
 
 filtered_df = (
@@ -1874,7 +1871,8 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     all_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.select(
         pl.col("AnnotationAccession", "SeqID", "SeqType",
                "ThemistoID", "replicon_length", "InitialReadCount", "AdditionalReadCount", "ReadCount",
-               "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate", "PIRA_CopyNumberEstimate"))
+               "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate",
+               "PIRA_CopyNumberEstimate"))
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.write_csv(PIRA_PCN_csv_file)
     return
@@ -1930,9 +1928,8 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
 def benchmark_PCN_estimates_with_minimap2_alignments(
         PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
         themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file):
-    ## IMPORTANT TODO: refactor code as needed for here and in the function
+    ## POTENTIAL TODO: refactor code as needed for here and in the function
     ## run_PIRA_on_all_genomes() as needed to reuse code and avoid duplication.
-
     
     ## import PIRA PCN estimates for the benchmarking genomes.
     PIRA_low_PCN_estimate_benchmark_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
@@ -1977,7 +1974,7 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
 
         ## now add the PIRA estimates as a column to the PIRA_estimates_DataFrame.
         ## First convert the NumPy array to a Polars Series
-        PIRA_PCN_estimate_series = pl.Series("minimap2_PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
+        PIRA_PCN_estimate_series = pl.Series("PIRA_CopyNumberEstimate", PIRA_PCN_estimate_vector)
         ## Then add the Polars Series of PIRA estimates  to the DataFrame with initial data
         my_PIRA_PCN_estimate_DataFrame = PIRAGenomeDataFrame.with_columns([PIRA_PCN_estimate_series])
 
@@ -1990,8 +1987,9 @@ def benchmark_PCN_estimates_with_minimap2_alignments(
     all_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.select(
         pl.col(
             "AnnotationAccession", "SeqID", "SeqType",
-            "ThemistoID", "replicon_length", "ReadCount", "SequencingCoverage",
-            "LongestRepliconCoverage", "InitialCopyNumberEstimate", "minimap2_PIRA_CopyNumberEstimate"))
+            "ThemistoID", "replicon_length", "InitialReadCount", "AdditionalReadCount", "ReadCount",
+            "SequencingCoverage", "LongestRepliconCoverage", "InitialCopyNumberEstimate",
+            "PIRA_CopyNumberEstimate"))
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.write_csv(minimap2_benchmark_PIRA_PCN_csv_file)
     return
