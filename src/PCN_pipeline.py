@@ -305,7 +305,7 @@ def create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file):
             # into the GCF RefSeq FTP URL
             ftp_url = fields[-3].replace("GCA", "GCF")
             
-            # Check for valid IDs and URLs (some rows have a '-' as a blank placeholder)
+            # Check for valid IDs and URLs (suppressed RefSeq IDs have a '-' as a blank placeholder)
             if refseq_id.startswith("GCF") and refseq_id in ftp_url:
                 refseq_accession_to_ftp_path_dict[refseq_id] = ftp_url
                 
@@ -437,7 +437,9 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
     refseq_ids = {line.split(",")[0] for line in RunID_table_data}
     
     ## Look up the FTP URLs for each refseq id
-    ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids]
+    ## IMPORTANT: we have to check to see if the ftp path exists; this is not true for suppressed entries in RefSeq,
+    ## which have an ftp_path == '-'
+    ftp_paths = [refseq_accession_to_ftp_path_dict[x] for x in refseq_ids if x in refseq_accession_to_ftp_path_dict]
 
     ## Run the async download
     asyncio.run(async_download(ftp_paths, reference_genome_dir))
@@ -1009,15 +1011,16 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         if not exists(tempdir):
             os.mkdir(tempdir)
         
-        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "6", "--n-threads", "6", "--file-colors"]
+        themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "8", "--n-threads", "8", "--file-colors"]
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=6G --cpus-per-task=6 --wrap=" + "\"" + themisto_build_string + "\""
+        slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + themisto_build_string + "\""
         if sys.platform == "linux": ## assume that we are running on DCC
-            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+            print("\n\nsys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
             print(slurm_string)
             subprocess.run(slurm_string, shell=True)
         else:
-            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            print("\n\nsys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            print(themisto_build_string)
             subprocess.run(themisto_build_string, shell=True)
     return
 
