@@ -2329,7 +2329,7 @@ def main():
     ## prokaryotes-with-plasmids.txt file.
     ## NOTE: as of May 27 2024, 4540 reference genomes should be downloaded.
 
-    logging.info("Stage 2: downloading reference genomes for genomes containing plasmids.")
+    logging.info("Stage 2: downloading gzipped genbank reference genomes for complete genomes containing plasmids.")
     if exists(stage_2_complete_file):
         print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
         logging.info(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
