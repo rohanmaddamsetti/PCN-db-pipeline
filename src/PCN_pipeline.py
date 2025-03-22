@@ -214,8 +214,9 @@ def fetch_Run_IDs_with_pysradb(sra_id):
             continue
 
         ## If there is data associated with this accession (total_size > 0), the run_accession is valid,
-        ##and  this is Illumina WGS data, then add to the list of run_accessions.
-        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and "ILLUMINA" in my_SRA_metadata:
+        ## and this is Illumina WGS data, then add to the list of run_accessions.
+        ## to be really safe, look for data with both ILLUMINA and Illumina keywords in the metadata.
+        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and "ILLUMINA" in my_SRA_metadata and "Illumina" in my_SRA_metadata:
             run_ids.append(run_id)
 
     if run_ids:
