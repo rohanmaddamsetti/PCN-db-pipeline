@@ -215,7 +215,7 @@ def fetch_Run_IDs_with_pysradb(sra_id):
 
         ## If there is data associated with this accession (total_size > 0), the run_accession is valid,
         ##and  this is Illumina WGS data, then add to the list of run_accessions.
-        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and (("ILLUMINA" in my_SRA_metadata) or ("Illumina" in my_SRA_metadata)):
+        if int_total_size > 0 and run_id != "nan" and "WGS" in my_SRA_metadata and "GENOMIC" in my_SRA_metadata and "ILLUMINA" in my_SRA_metadata:
             run_ids.append(run_id)
 
     if run_ids:
@@ -2318,7 +2318,7 @@ def main():
         with open(stage_1_complete_file, "w") as f:
             f.write(f"Stage 1 completed in {RunID_table_execution_time:.1f} seconds\n")
             quit()
-            
+        
         if TEST_MODE:
             logging.info("Test mode: Stage 1 completed successfully")
 
