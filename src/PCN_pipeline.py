@@ -25,6 +25,7 @@ from Bio import SeqIO
 from os.path import basename, exists
 import urllib.request
 import time
+import threading ## for keep track of stuck threads.
 import logging
 import glob
 import pprint
@@ -986,6 +987,37 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
     return
 
 
+def run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
+    ## This code handles a bug in themisto build-- sometimes randomly hangs, have to delete temp files
+    ## and restart and then it usually works.
+    retries = 0
+    while retries < max_retries:
+        process = subprocess.Popen(command_string, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        timer = threading.Timer(timeout, process.kill)  ## Kill process if it exceeds timeout
+
+        try:
+            timer.start()
+            stdout, stderr = process.communicate()
+        finally:
+            timer.cancel()
+
+        if process.returncode == 0:
+            print("Command succeeded:", stdout.decode())
+            return stdout.decode()
+        else:
+            print(f"*********COMMAND FAILED (attempt {retries + 1}):", stderr.decode())
+            if tempdir is not None: ## remove temporary files from the failed run.
+                print(f"removing {tempdir}")
+                subprocess.run(f"rm -rf {tempdir}", shell=True)
+                print(f"remaking {tempdir} before restarting")
+                os.mkdir(tempdir)
+            retries += 1
+            time.sleep(0.1)  ## Small delay before retrying
+    
+    print("Command failed after maximum retries.")
+    return
+
+
 def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_index_dir):
@@ -1013,17 +1045,14 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
             os.mkdir(tempdir)
         
         themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "8", "--n-threads", "8", "--file-colors"]
+
         themisto_build_string = " ".join(themisto_build_args)
-        slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + themisto_build_string + "\""
-        if sys.platform == "linux": ## assume that we are running on DCC
-            print("\n\nsys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
-            print(slurm_string)
-            subprocess.run(slurm_string, shell=True)
-        else:
-            print("\n\nsys.platform != 'linux' so we assume this script is being run on a mac laptop")
-            print(themisto_build_string)
-            subprocess.run(themisto_build_string, shell=True)
+        print(themisto_build_string)
+        ## if themisto build hangs for a long time, then kill and restart.
+        run_command_with_retry(themisto_build_string, tempdir)
+        
     return
+
 
 
 def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
@@ -1088,13 +1117,19 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
                 read_filename = os.path.basename(readpath).split(".fastq")[0]
                 output_filename = os.path.join(my_pseudoalignment_output_dir, read_filename + "_pseudoalignment.txt")
                 output_listfile_fh.write(output_filename + "\n")
-            
+        
         ## now run themisto pseudoalign.
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
         slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
-        print(slurm_string)
-        subprocess.run(slurm_string, shell=True)
+
+        if sys.platform == "linux": ## assume that we are running on DCC
+            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+            print(slurm_string)
+            subprocess.run(slurm_string, shell=True)
+        else:
+            print("sys.platform != 'linux' so we assume this script is being run on a mac")
+            subprocess.run(themisto_pseudoalign_string, shell=True)   
     return
 
 
@@ -2460,7 +2495,7 @@ def main():
     run_pipeline_stage(6, stage6_complete_file, stage6_final_message,
                        make_NCBI_replicon_fasta_refs_for_themisto,
                        reference_genome_dir, themisto_replicon_ref_dir)
-        
+    
     #####################################################################################
     ## Stage 7: Build separate Themisto indices for each genome.
     stage7_complete_file = "../results/stage7.done"
@@ -2468,7 +2503,7 @@ def main():
     run_pipeline_stage(7, stage7_complete_file, stage6_final_message,
                        make_NCBI_themisto_indices,
                        themisto_replicon_ref_dir, themisto_replicon_index_dir)
-
+    
     #####################################################################################
     ## Stage 8: Pseudoalign reads for each genome against each Themisto index.
     stage8_complete_file = "../results/stage8.done"
