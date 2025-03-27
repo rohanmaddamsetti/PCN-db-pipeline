@@ -1642,7 +1642,6 @@ def make_PIRAGenomeDataFrame(
     ## get the unique value in the AnnotationAccession column in my_naive_themisto_PCN_df, and use this
     ## to fill in the missing values.
     my_AnnotationAccession = my_naive_themisto_PCN_df.select(pl.col('AnnotationAccession').unique())
-    print(my_AnnotationAccession) ## FOR DEBUGGING
     assert len(my_AnnotationAccession) == 1 ## make sure this value is unique!
     
     ## merge the DataFrames containing the ReadCounts.
@@ -1679,7 +1678,13 @@ def make_PIRAGenomeDataFrame(
         longest_replicon_row_df, on = "AnnotationAccession", coalesce=True).with_columns(
         (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("InitialCopyNumberEstimate")).sort(
             ## and sort by the ThemistoID column.
-            "ThemistoID")
+            "ThemistoID").select(
+                ## super annoying, not sure why the AnnotationAccession_right columns
+                ## are kept. This select command removes these redundancies.
+                ['ThemistoID', 'SeqID', 'SeqType', 'replicon_length',
+                 'AdditionalReadCount', 'AnnotationAccession', 'InitialReadCount',
+                 'ReadCount', 'SequencingCoverage', 'LongestRepliconCoverage', 'InitialCopyNumberEstimate']
+            )
     
     """
     Stage 12 calls generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir), which
@@ -1859,29 +1864,21 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
-
-    ## trim the "_genomic" suffix from the genome directories to get the actual IDs needed
-    ## for filtering the naive PCN estimates for the genomes with multireads.
-    genome_IDs_with_multireads = [x.replace("_genomic", "") for x in genomes_with_multireads]
     
     ## import the results of the Naive PCN estimates from Themisto,
     ## and filter for rows corresponding to genomes with multireads.
     all_naive_themisto_PCN_estimates_df = pl.read_csv(naive_themisto_PCN_csv_file).filter(
-        pl.col("AnnotationAccession").is_in(genome_IDs_with_multireads))
+        pl.col("AnnotationAccession").is_in(genomes_with_multireads))
 
     ## Make an empty Polars DataFrame to contain all the results.
     all_PIRA_estimates_DataFrame = pl.DataFrame()
     
     ## now populate the all_PIRA_estimates_DataFrame.
-    for genome in genomes_with_multireads:
-        
+    for genome_ID in genomes_with_multireads:   
         ## get the Naive PCN estimates for this particular genome.
-        genome_ID = genome.replace("_genomic", "")
-        ## trim the "_genomic" suffix from the genome directory to get the actual ID needed
-        ## for filtering the naive PCN estimates for this genome with multireads
-        
+
         ## map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
-        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome)
+        themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, genome_ID)
 
         ## IMPORTANT: This DataFrame will NOT contain rows for replicons that didn't have
         ## any reads pseudoalign to it, and in some cases, may be completely empty.
@@ -1905,10 +1902,14 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         my_naive_themisto_PCN_df = my_naive_themisto_PCN_df.join(
             my_naive_themisto_PCN_estimates_subset_df, on="SeqID", how="left", coalesce=True).with_columns(
                 ## set missing values in the InitialReadCount column to 0.
-                pl.col("InitialReadCount").fill_null(strategy="zero"))
+                pl.col("InitialReadCount").fill_null(strategy="zero")).select(
+                ## super annoying, not sure why the AnnotationAccession_right columns
+                ## are kept. This select command removes these redundancies.
+                ["ThemistoID", "AnnotationAccession", "SeqID", "SeqType",
+                 "replicon_length", "InitialReadCount"])
         
         ## make a dictionary mapping reads to Themisto replicon IDs.
-        genome_dir = os.path.join(multiread_alignment_dir, genome)
+        genome_dir = os.path.join(multiread_alignment_dir, genome_ID)
         multiread_mapping_dict = parse_read_alignments(genome_dir)
         
         ## initialize the data structures for PIRA.
@@ -1917,7 +1918,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
         
         ## now run PIRA for this genome.
         PIRA_PCN_estimate_vector = run_PIRA(MatchMatrix, PIRAGenomeDataFrame)
-        print(f"PIRA PCN estimate vector for genome {genome} is: {PIRA_PCN_estimate_vector}")
+        print(f"PIRA PCN estimate vector for genome {genome_ID} is: {PIRA_PCN_estimate_vector}")
         print("*****************************************************************************************")
 
         ## now add the PIRA estimates as a column to the PIRAGenomeDataFrame.
@@ -1940,7 +1941,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     ## now save all_PIRA_estimates_DataFrame to disk.
     all_PIRA_estimates_DataFrame.write_csv(PIRA_PCN_csv_file)
     return
-        
+
 
 def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file):
 
