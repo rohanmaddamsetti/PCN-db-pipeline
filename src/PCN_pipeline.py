@@ -2473,12 +2473,10 @@ def main():
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
 
-
-    
     with open(stage3_complete_file, "w") as stage3_complete_log:
-    stage3_complete_log.write(Stage3TimeMessage)
-    stage3_complete_log.write("FASTQ data download from SRA completed.\n")
-    quit()
+        stage3_complete_log.write(Stage3TimeMessage)
+        stage3_complete_log.write("FASTQ data download from SRA completed.\n")
+        quit()
 
     ## Exit after stage 3 in test mode
     if TEST_MODE:
