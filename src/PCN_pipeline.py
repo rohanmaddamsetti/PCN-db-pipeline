@@ -1056,9 +1056,25 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
 
         themisto_build_string = " ".join(themisto_build_args)
         print(themisto_build_string)
-        ## if themisto build hangs for a long time, then kill and restart.
-        run_command_with_retry(themisto_build_string, tempdir)
-        
+
+
+        if sys.platform == "linux": ## assume that we are running on DCC
+            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+
+            ## NOTE: this is a little tricky. We use double-quotes to pass "python run_command_with_retries.py" to sbatch.
+            ## this script  takes two strings as an arguments:
+            ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
+            ## the arguments to the python script are single-quoted strings.
+            ## Notice that the single-quotes are escaped and enclosed in double-quotes, so hard to read!
+            slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_build_string + "\' " + "\'" + tempdir + "\'"
+            print(slurm_string)
+            subprocess.run(slurm_string, shell=True)
+            quit() ## FOR DEBUGGING
+        else:
+            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            ## if themisto build hangs for a long time, then kill and restart.
+            run_command_with_retry(themisto_build_string, tempdir)
+            
     return
 
 
@@ -2448,7 +2464,7 @@ def main():
                         if all_fastq_data_exist(Run_IDs, SRA_data_dir):
                             SRA_download_end_time = time.time()
                             SRA_download_execution_time = SRA_download_end_time - SRA_download_start_time
-                            Stage3TimeMessage = f"Stage 3 completed in {SRA_download_execution_time:.1f} seconds\n"
+                            Stage3TimeMessage = f"Stage 3 downloads completed successfully in {SRA_download_execution_time:.1f} seconds\n"
                             logging.info(Stage3TimeMessage)
                             try:
                                 with open(stage_3_complete_file, "w") as stage3_complete_log:
@@ -2473,15 +2489,18 @@ def main():
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
 
-    with open(stage3_complete_file, "w") as stage3_complete_log:
-        stage3_complete_log.write(Stage3TimeMessage)
-        stage3_complete_log.write("FASTQ data download from SRA completed.\n")
-        quit()
+        with open(stage3_complete_file, "w") as stage3_complete_log:
+            SRA_download_end_time = time.time()
+            SRA_final_execution_time = SRA_download_end_time - SRA_download_start_time
+            Stage3TimeMessage = f"Stage 3 completed in {SRA_final_execution_time:.1f} seconds\n"
+            stage3_complete_log.write(Stage3TimeMessage)
+            stage3_complete_log.write("FASTQ data download from SRA complete.\n")
+            quit()
 
-    ## Exit after stage 3 in test mode
-    if TEST_MODE:
-        logging.info("Test mode: All 3 stages completed. Exiting.")
-        return  ## Exit the main function
+        ## Exit after stage 3 in test mode
+        if TEST_MODE:
+            logging.info("Test mode: All 3 stages completed. Exiting.")
+            return  ## Exit the main function
 
     #####################################################################################
     ## Stage 4: make gbk ecological annotation file.
@@ -2581,6 +2600,12 @@ def main():
                        run_PIRA_on_all_genomes,
                        multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
 
+
+    #####################################################################################
+    ## TODO: move benchmarking to a separate script in order to compare these methods
+    ## to pseuPIRA.py!
+    ## TODO: ONLY SELECT GENOMES WITH PAIRED-END READS FOR KALLISTO!
+    quit()    
     #####################################################################################
     ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
     ## that apparently contain low PCN plasmids (PCN < 0.8). 
@@ -2593,12 +2618,6 @@ def main():
                        ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
                        choose_low_PCN_benchmark_genomes,
                        PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
-
-
-    ## TODO: ONLY SELECT GENOMES WITH PAIRED-END READS FOR KALLISTO!
-    ## TODO: move benchmarking to a separate script in order to compare these methods
-    ## to pseuPIRA.py!
-    quit()
     
     #####################################################################################
     ## Benchmark PIRA estimates against kallisto.
