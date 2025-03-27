@@ -490,7 +490,7 @@ def get_Run_IDs_from_RunID_table(RunID_table_csv):
         return []
 
 
-async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=3):
+async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=5):
     """prefetch FASTQ files for a run ID with retry logic."""
     logging.info(f"Prefetching {run_id} with command: prefetch --max-size 100G -O {SRA_data_dir} {run_id}")
     
@@ -509,21 +509,21 @@ async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=3):
             
             if prefetch_process.returncode != 0:
                 logging.error(f"Error prefetching {run_id} (attempt {attempt+1}/{max_retries}): {prefetch_stderr.decode()}")
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
                 continue
-            else:             
+            else:
                 logging.info(f"Successfully prefetched {run_id}")
                 return True
             
         except Exception as e:
             logging.error(f"Exception prefetching {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
     
     logging.error(f"Failed to prefetch {run_id} after {max_retries} attempts")
     return False
 
 
-async def prefetch_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=3):
+async def prefetch_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=5):
     """prefetch FASTQ reads in parallel with retry logic and integrity checks."""
     os.makedirs(SRA_data_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -599,42 +599,50 @@ async def validate_sra_download_parallel(SRA_data_dir, Run_IDs, max_concurrent=1
     return False
 
 
-async def unpack_fastq_reads(run_id, SRA_data_dir):
+async def unpack_fastq_reads(run_id, SRA_data_dir, max_retries=5):
     """Unpack prefetched sra files into FASTQ."""
     logging.info(f"Unpacking {run_id} with command: fasterq-dump --split-files --skip-technical --temp {SRA_data_dir} --outdir {SRA_data_dir} --progress {run_id}")
+
+    for attempt in range(max_retries):
+        try:
+            ## Use fasterq-dump to extract FASTQ
+            logging.info(f"Running fasterq-dump for {run_id}...")
+            cmd = [
+                "fasterq-dump",
+                "--split-files",
+                "--skip-technical",
+                "--temp", SRA_data_dir,
+                "--outdir", SRA_data_dir,
+                "--progress",
+                os.path.join(SRA_data_dir, run_id) ## give the path to the prefetched dirs.
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                logging.error(f"Error unpacking {run_id} (attempt {attempt+1}/{max_retries}): {stderr.decode()}")
+                await asyncio.sleep(1)
+                continue
+
+            else:
+                logging.info(f"Successfully unpacked {run_id} into fastq data.")
+                return True
+
+        except Exception as e:
+            logging.error(f"Exception unpacking {run_id} (attempt {attempt+1}/{max_retries}): {str(e)}")
+            await asyncio.sleep(1)
     
-    try:
-        ## Use fasterq-dump to extract FASTQ
-        logging.info(f"Running fasterq-dump for {run_id}...")
-        cmd = [
-            "fasterq-dump",
-            "--split-files",
-            "--skip-technical",
-            "--temp", SRA_data_dir,
-            "--outdir", SRA_data_dir,
-            "--progress",
-            os.path.join(SRA_data_dir, run_id) ## give the path to the prefetched dirs.
-        ]
-
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode == 0:
-            logging.info(f"Successfully unpacked {run_id} into fastq data.")
-            return True
-            
-    except Exception as e:
-        logging.error(f"Exception unpacking {run_id}: {str(e)}")
     logging.error(f"Failed to fasterq-dump {run_id}")
     return False
 
 
-async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10):
+async def unpack_fastq_reads_parallel(SRA_data_dir, Run_IDs, max_concurrent=10, max_retries=5):
     """unpack FASTQ reads in parallel with retry logic and integrity checks."""
     os.makedirs(SRA_data_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(max_concurrent)
@@ -1054,7 +1062,6 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     return
 
 
-
 def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_pseudoalignment_dir):
@@ -1153,18 +1160,20 @@ def map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, my_genome_d
 
 
 def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themisto_pseudoalignment_dir, themisto_results_csvfile_path):
+    
     with open(themisto_results_csvfile_path, "w") as output_csv_fh:
         ## first, write the output header.
         output_header = "AnnotationAccession,SeqID,SeqType,ReadCount"
         output_csv_fh.write(output_header + "\n")
+        
         print(output_header)
         ## Iterate over the directories in themisto_pseudoalignment_dir.
         ## These contain the pseudoalignments for each genome.
         themisto_pseudoalignment_result_dirs = [x for x in os.listdir(themisto_pseudoalignment_dir) if x.startswith("GCF") and os.path.isdir(os.path.join(themisto_pseudoalignment_dir, x))]
-        for my_genome_dirname in themisto_pseudoalignment_result_dirs:
-            if not my_genome_dirname.startswith("GCF"): continue ## just an additional check to remove the temp directory.
-            my_cur_pseudoalignment_dir_path = os.path.join(themisto_pseudoalignment_dir, my_genome_dirname)
-            my_cur_AnnotationAccession = my_genome_dirname.strip("_genomic")
+        for AnnotationAccession in themisto_pseudoalignment_result_dirs:
+            if not AnnotationAccession.startswith("GCF"): continue ## just an additional check to remove the temp directory.
+            my_cur_pseudoalignment_dir_path = os.path.join(themisto_pseudoalignment_dir, AnnotationAccession)
+            
             ## initialize a dictionary to store the pseudoalignment counts.
             pseudoalignment_read_count_dict = dict()
             pseudoalignment_filepaths = [os.path.join(my_cur_pseudoalignment_dir_path, x) for x in os.listdir(my_cur_pseudoalignment_dir_path) if x.endswith("_pseudoalignment.txt")]
@@ -1181,7 +1190,7 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
                             pseudoalignment_read_count_dict[replicon_set_string] = 1
 
             ## now, let's map the themisto replicon ID numbers to a (SeqID, SeqType) tuple.
-            themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, my_genome_dirname)
+            themisto_ID_to_seq_metadata_dict = map_themisto_IDs_to_replicon_metadata(themisto_replicon_ref_dir, AnnotationAccession)
             
             ## now write the pseudoalignment counts to file.
             for replicon_set_string in sorted(pseudoalignment_read_count_dict.keys()):
@@ -1193,12 +1202,12 @@ def summarize_themisto_pseudoalignment_results(themisto_replicon_ref_dir, themis
                 elif len(replicon_ID_list) == 1:
                     my_replicon_ID = replicon_ID_list[0]
                     ## the SeqLength parameter in themisto_ID_to_seq_metadata_dict is not used here.
-                    SeqID, SeqType, _ = themisto_ID_to_seq_metadata_dict[my_replicon_ID]
+                    SeqID, SeqType, _ = themisto_ID_to_seq_metadata_dict[int(my_replicon_ID)]
                 else:
-                    SeqID = "&".join([themisto_ID_to_seq_metadata_dict[replicon_ID][0] for replicon_ID in replicon_ID_list])
+                    SeqID = "&".join([themisto_ID_to_seq_metadata_dict[int(replicon_ID)][0] for replicon_ID in replicon_ID_list])
                     SeqType = "multireplicon_sequence"
                 ## now write to file.
-                rowdata = ",".join([my_cur_AnnotationAccession, SeqID, SeqType, str(read_count)])
+                rowdata = ",".join([AnnotationAccession, SeqID, SeqType, str(read_count)])
                 print(rowdata)
                 output_csv_fh.write(rowdata + "\n")
     return
@@ -2568,11 +2577,8 @@ def main():
                        multiread_alignment_dir, themisto_replicon_ref_dir, naive_themisto_PCN_csv_file, PIRA_PCN_csv_file)
 
     #####################################################################################
-    ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2.
-    #####################################################################################
     ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
-    ## that apparently contain low PCN plasmids (PCN < 0.8), using minimap2.
-    
+    ## that apparently contain low PCN plasmids (PCN < 0.8). 
     #####################################################################################
     ## Stage 15: choose a set of 100 random genomes that contain plasmids with PCN < 1
     ## and ReadCount > MIN_READ_COUNT.
@@ -2583,78 +2589,86 @@ def main():
                        choose_low_PCN_benchmark_genomes,
                        PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
 
-    #####################################################################################
-    ## Stage 16: run minimap2 on the set of 100 genomes chosen in Stage 15.
-    stage16_complete_file = "../results/stage16.done"
-    stage16_final_message = "stage 16 (minimap2 full alignment) finished successfully.\n"
-    run_pipeline_stage(16, stage16_complete_file, stage16_final_message,
-                       align_reads_for_benchmark_genomes_with_minimap2,
-                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
-                       SRA_data_dir, benchmark_alignment_dir)
-    
-    #####################################################################################
-    ## Stage 17: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
-    stage17_complete_file = "../results/stage17.done"
-    stage17_final_message = "stage 17 (minimap2 results parsing) finished successfully.\n"
-    run_pipeline_stage(17, stage17_complete_file, stage17_final_message,
-                       benchmark_PCN_estimates_with_minimap2_alignments,
-                       PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
-                       themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
-    
-    #####################################################################################
-    ## Stage 18: run breseq on the set of 100 genomes chosen for benchmarking.
-    stage18_complete_file = "../results/stage18.done"
-    stage18_final_message = "stage 18 (running breseq) finished successfully.\n"
-    run_pipeline_stage(18, stage18_complete_file, stage18_final_message,
-                       benchmark_low_PCN_genomes_with_breseq,
-                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
-                       reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
 
-    #####################################################################################
-    ## Stage 19: parse breseq results on the set of 100 genomes chosen for benchmarking.
-    stage19_complete_file = "../results/stage19.done"
-    stage19_final_message = "stage 19 (breseq results parsing) finished successfully.\n"
-    run_pipeline_stage(19, stage19_complete_file, stage19_final_message,
-                       parse_breseq_results,
-                       breseq_benchmark_results_dir, breseq_benchmark_summary_file)        
-
+    ## TODO: ONLY SELECT GENOMES WITH PAIRED-END READS FOR KALLISTO!
+    ## TODO: move benchmarking to a separate script in order to compare these methods
+    ## to pseuPIRA.py!
+    quit()
+    
     #####################################################################################
     ## Benchmark PIRA estimates against kallisto.
     #####################################################################################
     ## In order to benchmark accuracy, estimate PCN for a subset of 100 genomes
     ## that apparently contain low PCN plasmids (PCN < 0.8), using kallisto.
     #####################################################################################   
-    ## Stage 20: Make replicon-level FASTA reference files for copy number estimation using kallisto.
-    stage20_complete_file = "../results/stage20.done"
-    stage20_final_message = "Stage 20 (FASTA reference sequences for kallisto) finished successfully.\n"
-    run_pipeline_stage(20, stage20_complete_file, stage20_final_message,
+    ## Stage 16: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    stage16_complete_file = "../results/stage16.done"
+    stage16_final_message = "Stage 16 (FASTA reference sequences for kallisto) finished successfully.\n"
+    run_pipeline_stage(16, stage16_complete_file, stage16_final_message,
                        make_NCBI_replicon_fasta_refs_for_kallisto,
                        reference_genome_dir, kallisto_replicon_ref_dir)
     
     #####################################################################################
-    ## Stage 21: Make replicon-level kallisto index files for each genome.
-    stage21_complete_file = "../results/stage21.done"
-    stage21_final_message = "Stage 21 (kallisto index file construction) finished successfully.\n"
-    run_pipeline_stage(21, stage21_complete_file, stage21_final_message,
+    ## Stage 17: Make replicon-level kallisto index files for each genome.
+    stage17_complete_file = "../results/stage17.done"
+    stage17_final_message = "Stage 17 (kallisto index file construction) finished successfully.\n"
+    run_pipeline_stage(17, stage17_complete_file, stage17_final_message,
     make_NCBI_kallisto_indices,
     kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
     
     #####################################################################################
-    ## Stage 22: run kallisto quant on all genome data, on replicon-level indices.
+    ## Stage 18: run kallisto quant on all genome data, on replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
-    stage22_complete_file = "../results/stage22.done"
-    stage22_final_message = "Stage 22 (kallisto quant) finished successfully.\n"
-    run_pipeline_stage(22, stage22_complete_file, stage22_final_message,
+    stage18_complete_file = "../results/stage18.done"
+    stage18_final_message = "Stage 18 (kallisto quant) finished successfully.\n"
+    run_pipeline_stage(18, stage18_complete_file, stage18_final_message,
                        run_kallisto_quant,
                        RunID_table_csv, kallisto_replicon_index_dir, SRA_data_dir, kallisto_replicon_quant_results_dir)
     
     #####################################################################################
-    ## Stage 23: make a table of the estimated copy number for all chromosomes and plasmids using kallisto
-    stage23_complete_file = "../results/stage23.done"
-    stage23_final_message = "Stage 23 (tabulating replicon copy numbers estimated by kallisto) finished successfully.\n"
-    run_pipeline_stage(23, stage23_complete_file, stage23_final_message,
+    ## Stage 19: make a table of the estimated copy number for all chromosomes and plasmids using kallisto
+    stage19_complete_file = "../results/stage19.done"
+    stage19_final_message = "Stage 19 (tabulating replicon copy numbers estimated by kallisto) finished successfully.\n"
+    run_pipeline_stage(19, stage19_complete_file, stage19_final_message,
                        measure_kallisto_replicon_copy_numbers,
                        kallisto_replicon_quant_results_dir, kallisto_replicon_copy_number_csv_file)
+
+    #####################################################################################
+    ## Benchmark PIRA estimates against traditional alignment PCN estimation with minimap2 and breseq.
+    #####################################################################################
+    ## Stage 20: run minimap2 on the set of 100 genomes chosen in Stage 15.
+    stage20_complete_file = "../results/stage20.done"
+    stage20_final_message = "stage 20 (minimap2 full alignment) finished successfully.\n"
+    run_pipeline_stage(20, stage20_complete_file, stage20_final_message,
+                       align_reads_for_benchmark_genomes_with_minimap2,
+                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, themisto_replicon_ref_dir,
+                       SRA_data_dir, benchmark_alignment_dir)
+    
+    #####################################################################################
+    ## Stage 21: parse minimap2 results on the set of 100 genomes chosen for benchmarking.
+    stage21_complete_file = "../results/stage21.done"
+    stage21_final_message = "stage 21 (minimap2 results parsing) finished successfully.\n"
+    run_pipeline_stage(21, stage21_complete_file, stage21_final_message,
+                       benchmark_PCN_estimates_with_minimap2_alignments,
+                       PIRA_low_PCN_benchmark_csv_file, benchmark_alignment_dir,
+                       themisto_replicon_ref_dir, minimap2_benchmark_PIRA_PCN_csv_file)
+    
+    #####################################################################################
+    ## Stage 22: run breseq on the set of 100 genomes chosen for benchmarking.
+    stage22_complete_file = "../results/stage22.done"
+    stage22_final_message = "stage 22 (running breseq) finished successfully.\n"
+    run_pipeline_stage(22, stage22_complete_file, stage22_final_message,
+                       benchmark_low_PCN_genomes_with_breseq,
+                       PIRA_low_PCN_benchmark_csv_file, RunID_table_csv,
+                       reference_genome_dir, SRA_data_dir, breseq_benchmark_results_dir)        
+
+    #####################################################################################
+    ## Stage 23: parse breseq results on the set of 100 genomes chosen for benchmarking.
+    stage23_complete_file = "../results/stage23.done"
+    stage23_final_message = "stage 23 (breseq results parsing) finished successfully.\n"
+    run_pipeline_stage(23, stage23_complete_file, stage23_final_message,
+                       parse_breseq_results,
+                       breseq_benchmark_results_dir, breseq_benchmark_summary_file)    
     return
 
 
