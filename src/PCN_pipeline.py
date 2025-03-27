@@ -2260,18 +2260,18 @@ def main():
         # Create necessary directories
         os.makedirs(reference_genome_dir, exist_ok=True)
         os.makedirs(SRA_data_dir, exist_ok=True)
-        stage_1_complete_file = "../results/test-stage1.done"
-        stage_2_complete_file = "../results/test-stage2.done"
-        stage_3_complete_file = "../results/test-stage3.done"
+        stage1_complete_file = "../results/test-stage1.done"
+        stage2_complete_file = "../results/test-stage2.done"
+        stage3_complete_file = "../results/test-stage3.done"
     else:
         prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
         RunID_table_csv = "../results/RunID_table.csv"
         reference_genome_dir = "../data/NCBI-reference-genomes/"
         SRA_data_dir = "../data/SRA/"
         os.makedirs(SRA_data_dir, exist_ok=True)
-        stage_1_complete_file = "../results/stage1.done"
-        stage_2_complete_file = "../results/stage2.done"
-        stage_3_complete_file = "../results/stage3.done"
+        stage1_complete_file = "../results/stage1.done"
+        stage2_complete_file = "../results/stage2.done"
+        stage3_complete_file = "../results/stage3.done"
 
     ## directories for replicon-level copy number estimation with kallisto.
     kallisto_replicon_ref_dir = "../results/kallisto_replicon_references/"
@@ -2360,7 +2360,7 @@ def main():
             table_contents = f.read()
             logging.info(table_contents)
             
-        with open(stage_1_complete_file, "w") as f:
+        with open(stage1_complete_file, "w") as f:
             f.write(f"Stage 1 completed in {RunID_table_execution_time:.1f} seconds\n")
             quit()
         
@@ -2375,9 +2375,9 @@ def main():
     ## NOTE: as of May 27 2024, 4540 reference genomes should be downloaded.
 
     logging.info("Stage 2: downloading gzipped genbank reference genomes for complete genomes containing plasmids.")
-    if exists(stage_2_complete_file):
-        print(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
-        logging.info(f"{stage_2_complete_file} exists on disk-- skipping stage 2.")
+    if exists(stage2_complete_file):
+        print(f"{stage2_complete_file} exists on disk-- skipping stage 2.")
+        logging.info(f"{stage2_complete_file} exists on disk-- skipping stage 2.")
     else:
         refgenome_download_start_time = time.time()  ## Record the start time
         refseq_accession_to_ftp_path_dict = create_refseq_accession_to_ftp_path_dict(prokaryotes_with_plasmids_file)
@@ -2392,9 +2392,9 @@ def main():
         Stage2TimeMessage = f"Stage 2 (reference genome download) execution time: {refgenome_download_execution_time} seconds\n"
         logging.info(Stage2TimeMessage)
         
-        with open(stage_2_complete_file, "w") as stage_2_complete_log:
-            stage_2_complete_log.write(Stage2TimeMessage)
-            stage_2_complete_log.write("reference genomes downloaded successfully.\n")
+        with open(stage2_complete_file, "w") as stage2_complete_log:
+            stage2_complete_log.write(Stage2TimeMessage)
+            stage2_complete_log.write("reference genomes downloaded successfully.\n")
             quit()
             
         if TEST_MODE:
@@ -2404,9 +2404,9 @@ def main():
     #####################################################################################
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
     logging.info("Stage 3: downloading Illumina reads from the NCBI Short Read Archive (SRA).")
-    if exists(stage_3_complete_file):
-        print(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
-        logging.info(f"{stage_3_complete_file} exists on disk-- skipping stage 3.")
+    if exists(stage3_complete_file):
+        print(f"{stage3_complete_file} exists on disk-- skipping stage 3.")
+        logging.info(f"{stage3_complete_file} exists on disk-- skipping stage 3.")
     else:
         SRA_download_start_time = time.time()
         
@@ -2472,7 +2472,14 @@ def main():
             logging.error(f"Error in Stage 3: {str(e)}")
             if TEST_MODE:
                 logging.info("Test mode: Stage 3 failed with errors")
+
+
     
+    with open(stage3_complete_file, "w") as stage3_complete_log:
+    stage3_complete_log.write(Stage3TimeMessage)
+    stage3_complete_log.write("FASTQ data download from SRA completed.\n")
+    quit()
+
     ## Exit after stage 3 in test mode
     if TEST_MODE:
         logging.info("Test mode: All 3 stages completed. Exiting.")
