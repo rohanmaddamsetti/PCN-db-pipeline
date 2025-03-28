@@ -995,7 +995,7 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
     return
 
 
-def run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
+def old_run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
     ## This code handles a bug in themisto build-- sometimes randomly hangs, have to delete temp files
     ## and restart and then it usually works.
     retries = 0
@@ -1026,7 +1026,7 @@ def run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=
     return
 
 
-def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
+def old_make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_index_dir):
         os.mkdir(themisto_index_dir)
@@ -1056,26 +1056,81 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
 
         themisto_build_string = " ".join(themisto_build_args)
         print(themisto_build_string)
-
-        if sys.platform == "linux": ## assume that we are running on DCC
-            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
-
-            
-            ## NOTE: this is a little tricky. We use double-quotes to pass "python run_command_with_retries.py" to sbatch.
-            ## this script  takes two strings as an arguments:
-            ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
-            ## the arguments to the python script are single-quoted strings.
-            ## Notice that the single-quotes are escaped and enclosed in double-quotes, so hard to read!
-            slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_build_string + "\' " + "\'" + tempdir + "\'" + "\""
-            print(slurm_string)
-            subprocess.run(slurm_string, shell=True)
-        else:
-            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
-            ## if themisto build hangs for a long time, then kill and restart.
-            run_command_with_retry(themisto_build_string, tempdir)
+        run_command_with_retry(themisto_build_string, tempdir)
             
     return
 
+
+async def run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
+    """Run a shell command with retries, handling potential hangs."""
+    retries = 0
+    while retries < max_retries:
+        process = await asyncio.create_subprocess_shell(
+            command_string,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            stdout, stderr = b"", b"Timeout occurred"
+
+        if process.returncode == 0:
+            print("Command succeeded:", stdout.decode())
+            return stdout.decode()
+        else:
+            print(f"*********COMMAND FAILED (attempt {retries + 1}):", stderr.decode())
+            if tempdir is not None:
+                print(f"Removing {tempdir}")
+                subprocess.run(f"rm -rf {tempdir}", shell=True)
+                print(f"Remaking {tempdir} before restarting")
+                os.mkdir(tempdir)
+            retries += 1
+            await asyncio.sleep(0.1)
+    
+    print("Command failed after maximum retries.")
+    return
+
+
+async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir):
+    """build a Themisto index for a single genome"""
+    ref_fasta_dir = os.path.join(themisto_ref_dir, genome_id)
+    if not os.path.isdir(ref_fasta_dir):
+        return
+    
+    index_input_filelist = os.path.join(ref_fasta_dir, genome_id + ".txt")
+    genome_index_dir = os.path.join(themisto_index_dir, genome_id)
+    os.makedirs(genome_index_dir, exist_ok=True)
+    
+    index_prefix = os.path.join(genome_index_dir, genome_id)
+    tempdir = os.path.join(genome_index_dir, "temp")
+    os.makedirs(tempdir, exist_ok=True)
+    
+    themisto_build_args = [
+        "themisto", "build", "-k", "31", "-i", index_input_filelist,
+        "--index-prefix", index_prefix, "--temp-dir", tempdir,
+        "--mem-gigas", "8", "--n-threads", "8", "--file-colors"
+    ]
+    themisto_build_string = " ".join(themisto_build_args)
+    print(themisto_build_string)
+    
+    await run_command_with_retry(themisto_build_string, tempdir)
+
+
+async def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
+    """Create Themisto indices for all genomes in the themisto reference directory."""
+    os.makedirs(themisto_index_dir, exist_ok=True)
+    
+    tasks = [
+        make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir)
+        for genome_id in os.listdir(themisto_ref_dir)
+        if os.path.isdir(os.path.join(themisto_ref_dir, genome_id))
+    ]
+    
+    await asyncio.gather(*tasks)
 
 def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
@@ -1144,21 +1199,7 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
 
-        if sys.platform == "linux": ## assume that we are running on DCC
-            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
-
-            ## NOTE: this is a little tricky. We use double-quotes to pass "python run_command_with_retries.py" to sbatch.
-            ## this script  takes two strings as an arguments:
-            ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
-            ## the arguments to the python script are single-quoted strings.
-            ## Notice that the single-quotes are escaped and enclosed in double-quotes, so hard to read!            
-            slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_pseudoalign_string + "\' " + "\'" + tempdir + "\'" + "\""
-            print(slurm_string)
-            subprocess.run(slurm_string, shell=True)
-        else:
-            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
-            ## if themisto build hangs for a long time, then kill and restart.
-            run_command_with_retry(themisto_pseudoalign_string, tempdir)
+        run_command_with_retry(themisto_pseudoalign_string, tempdir)
     return
 
 
@@ -2541,7 +2582,7 @@ def main():
     stage7_complete_file = "../results/stage7.done"
     stage7_final_message = "Stage 7 (making indices for themisto) finished successfully.\n"
     run_pipeline_stage(7, stage7_complete_file, stage6_final_message,
-                       make_NCBI_themisto_indices,
+                       make_themisto_indices,
                        themisto_replicon_ref_dir, themisto_replicon_index_dir)
     
     #####################################################################################
