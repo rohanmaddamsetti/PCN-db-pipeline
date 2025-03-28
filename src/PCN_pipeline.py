@@ -1066,7 +1066,7 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
             ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
             ## the arguments to the python script are single-quoted strings.
             ## Notice that the single-quotes are escaped and enclosed in double-quotes, so hard to read!
-            slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_build_string + "\' " + "\'" + tempdir + "\'"
+            slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_build_string + "\' " + "\'" + tempdir + "\'" + "\""
             print(slurm_string)
             subprocess.run(slurm_string, shell=True)
             quit() ## FOR DEBUGGING
