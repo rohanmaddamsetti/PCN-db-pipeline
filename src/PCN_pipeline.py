@@ -1060,6 +1060,7 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         if sys.platform == "linux": ## assume that we are running on DCC
             print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
 
+            
             ## NOTE: this is a little tricky. We use double-quotes to pass "python run_command_with_retries.py" to sbatch.
             ## this script  takes two strings as an arguments:
             ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
