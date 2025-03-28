@@ -2440,7 +2440,7 @@ def main():
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
     ## first, make a dictionary from RefSeq accessions to ftp paths using the
     ## prokaryotes-with-plasmids.txt file.
-    ## NOTE: as of May 27 2024, 4540 reference genomes should be downloaded.
+    ## NOTE: as of March 28 2024, 4849 reference genomes should be downloaded.
 
     logging.info("Stage 2: downloading gzipped genbank reference genomes for complete genomes containing plasmids.")
     if exists(stage2_complete_file):
