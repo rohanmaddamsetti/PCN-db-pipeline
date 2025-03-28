@@ -48,7 +48,6 @@ def parse_args():
     parser.add_argument(
         "cmd_string",
         type=str,
-        required=True,
         help="command to run with retries"
     )
 
