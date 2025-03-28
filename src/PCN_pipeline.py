@@ -1061,7 +1061,7 @@ def old_make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
     return
 
 
-async def run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
+async def run_command_with_retry(command_string, tempdir=None, max_retries=5, timeout=20):
     """Run a shell command with retries, handling potential hangs."""
     retries = 0
     while retries < max_retries:
@@ -1120,17 +1120,21 @@ async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_i
     await run_command_with_retry(themisto_build_string, tempdir)
 
 
-async def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
-    """Create Themisto indices for all genomes in the themisto reference directory."""
+async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir):
     os.makedirs(themisto_index_dir, exist_ok=True)
-    
     tasks = [
         make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir)
         for genome_id in os.listdir(themisto_ref_dir)
         if os.path.isdir(os.path.join(themisto_ref_dir, genome_id))
     ]
-    
     await asyncio.gather(*tasks)
+
+
+def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
+    """Create Themisto indices for all genomes in the themisto reference directory."""
+    asyncio.run(make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir))
+    return
+    
 
 def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
@@ -2584,7 +2588,7 @@ def main():
     run_pipeline_stage(7, stage7_complete_file, stage6_final_message,
                        make_themisto_indices,
                        themisto_replicon_ref_dir, themisto_replicon_index_dir)
-    
+
     #####################################################################################
     ## Stage 8: Pseudoalign reads for each genome against each Themisto index.
     stage8_complete_file = "../results/stage8.done"
