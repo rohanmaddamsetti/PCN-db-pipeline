@@ -1057,7 +1057,6 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
         themisto_build_string = " ".join(themisto_build_args)
         print(themisto_build_string)
 
-
         if sys.platform == "linux": ## assume that we are running on DCC
             print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
 
@@ -1069,7 +1068,6 @@ def make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
             slurm_string = "sbatch -p scavenger --mem=8G --cpus-per-task=8 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_build_string + "\' " + "\'" + tempdir + "\'" + "\""
             print(slurm_string)
             subprocess.run(slurm_string, shell=True)
-            quit() ## FOR DEBUGGING
         else:
             print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
             ## if themisto build hangs for a long time, then kill and restart.
@@ -1144,15 +1142,22 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         ## now run themisto pseudoalign.
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
-        slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + themisto_pseudoalign_string + "\""
 
         if sys.platform == "linux": ## assume that we are running on DCC
             print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+
+            ## NOTE: this is a little tricky. We use double-quotes to pass "python run_command_with_retries.py" to sbatch.
+            ## this script  takes two strings as an arguments:
+            ## a (themisto) command to run with retries, and a temporary directory to delete if the command fails.
+            ## the arguments to the python script are single-quoted strings.
+            ## Notice that the single-quotes are escaped and enclosed in double-quotes, so hard to read!            
+            slurm_string = "sbatch -p scavenger --mem=4G --cpus-per-task=4 --wrap=" + "\"" + "python run_command_with_retries.py " + "\'" + themisto_pseudoalign_string + "\' " + "\'" + tempdir + "\'" + "\""
             print(slurm_string)
             subprocess.run(slurm_string, shell=True)
         else:
-            print("sys.platform != 'linux' so we assume this script is being run on a mac")
-            subprocess.run(themisto_pseudoalign_string, shell=True)   
+            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            ## if themisto build hangs for a long time, then kill and restart.
+            run_command_with_retry(themisto_pseudoalign_string, tempdir)
     return
 
 
