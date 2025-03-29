@@ -379,19 +379,15 @@ def run_PCN_pipeline():
     #####################################################################################
     ## Stage 15: choose a set of 100 random genomes that contain plasmids with PCN < 1
     ## and ReadCount > MIN_READ_COUNT.
-
-
-    ## TODO: ONLY SELECT GENOMES WITH PAIRED-END READS FOR KALLISTO!
-    
-    quit()
-
     
     stage15_complete_file = "../results/stage15.done"
     stage15_final_message = "Stage 15 (choosing 100 random genomes with PCN < 1) finished successfully.\n"
     run_pipeline_stage(15, stage15_complete_file, stage15_final_message,
-                       ## at random, choose 100 genomes containing a plasmid with PCN < 1, and ReadCount > 10000.
+                       ## at random, choose 100 genomes containing a plasmid with PCN < 1, paired-end read data,
+                       ## and ReadCount > 10000.
                        choose_low_PCN_benchmark_genomes,
-                       PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file)
+                       PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, SRA_data_dir)
+
     
     #####################################################################################
     ## Benchmark PIRA estimates against kallisto.

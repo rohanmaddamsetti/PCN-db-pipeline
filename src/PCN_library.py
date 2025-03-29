@@ -1916,9 +1916,30 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     return
 
 
-def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file):
 
-    ## Choose 100 genomes for the benchmarking against minimap2 PCN estimates.
+
+def get_RefSeqIDs_with_paired_end_reads(RunID_table_csv, SRA_data_dir):
+
+    paired_end_1_pattern = f"{SRA_data_dir}/*_1.fastq"
+    paired_end_2_pattern = f"{SRA_data_dir}/*_2.fastq"
+
+    RunID_1_set = { basename(x).split("_1.fastq")[0] for x in glob.glob(paired_end_1_pattern) }
+    RunID_2_set = { basename(x).split("_2.fastq")[0] for x in glob.glob(paired_end_2_pattern) }
+    ## now take the intersection.
+    paired_end_RunIDs = sorted(list(RunID_1_set & RunID_2_set))
+
+    paired_end_RunID_table_df = (
+        pl.read_csv(RunID_table_csv)
+        .filter(pl.col("Run_ID").is_in(paired_end_RunIDs))
+    )
+
+    paired_end_RefSeqID_list = paired_end_RunID_table_df["RefSeq_ID"].to_list()
+    return paired_end_RefSeqID_list
+
+
+def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file,
+                                     RunID_table_csv, SRA_data_dir):
+    ## By default choose 100 genomes for the benchmarking against minimap2 PCN estimates.
     GENOME_SAMPLE_SIZE = 100
     
     ## ReadCount threshold for PCN estimates by pseudoalignment.
@@ -1926,7 +1947,7 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
     MIN_READ_COUNT = 10000 
 
     PCN_THRESHOLD = 0.8 ## threshold to define low PCN < 1 (to avoid selecting plasmids with PCN = 0.98).
-
+    
     ## get the PIRA estimates from disk. 
     all_PIRA_estimates_DataFrame = pl.read_csv(PIRA_PCN_csv_file)
 
@@ -1947,12 +1968,24 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
 
     ## get the unique annotation accessions in this dataframe
     annotation_accession_list = list(set(filtered_PIRA_estimates_DataFrame.get_column("AnnotationAccession").to_list()))
+
+    ## only sample annotation accesions that have paired-end read data.
+    paired_end_annotation_accession_list = list()
+    paired_end_RefSeqID_list = get_RefSeqIDs_with_paired_end_reads(RunID_table_csv, SRA_data_dir)
+    for annotation_accession in annotation_accession_list:
+        my_parts = annotation_accession.split("_", 2)
+        my_refseq_id = my_parts[0] + "_" + my_parts[1]
+        if my_refseq_id in paired_end_RefSeqID_list:
+            paired_end_annotation_accession_list.append(annotation_accession)
+
+
+    print(len(paired_end_annotation_accession_list))
     ## shuffle the list
-    random.shuffle(annotation_accession_list)
-    ## make sure the sample size is less than the length of the list
-    assert GENOME_SAMPLE_SIZE < len(annotation_accession_list)
+    random.shuffle(paired_end_annotation_accession_list)
+    ## make sure the sample size is less than or equal to the length of the list
+    assert GENOME_SAMPLE_SIZE <= len(paired_end_annotation_accession_list)
     ## and pick the first GENOME_SAMPLE_SIZE annotation accessions in the shuffled list.
-    selected_annotation_accessions = annotation_accession_list[0:GENOME_SAMPLE_SIZE]
+    selected_annotation_accessions = paired_end_annotation_accession_list[0:GENOME_SAMPLE_SIZE]
 
     ## now subset the original dataframe based on these annotation accessions.
     random_subset_of_PIRA_estimates_DataFrame = all_PIRA_estimates_DataFrame.filter(
