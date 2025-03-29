@@ -388,31 +388,31 @@ def run_PCN_pipeline():
                        choose_low_PCN_benchmark_genomes,
                        PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_csv_file, RunID_table_csv, SRA_data_dir)
 
-    
     #####################################################################################
     ## Benchmark PIRA estimates against kallisto.
     #####################################################################################
     ## In order to benchmark accuracy, estimate PCN for a subset of 100 genomes
     ## that apparently contain low PCN plasmids (PCN < 0.8), using kallisto.
     #####################################################################################   
-    ## Stage 16: Make replicon-level FASTA reference files for copy number estimation using kallisto.
+    ## Stage 16: Make replicon-level FASTA reference files for benchmarking copy number estimation against kallisto.
     stage16_complete_file = "../results/stage16.done"
     stage16_final_message = "Stage 16 (FASTA reference sequences for kallisto) finished successfully.\n"
     run_pipeline_stage(16, stage16_complete_file, stage16_final_message,
-                       make_NCBI_replicon_fasta_refs_for_kallisto,
-                       reference_genome_dir, kallisto_replicon_ref_dir)
+                       make_benchmark_fasta_refs_for_kallisto,
+                       reference_genome_dir, kallisto_replicon_ref_dir, PIRA_low_PCN_benchmark_csv_file)
     
     #####################################################################################
-    ## Stage 17: Make replicon-level kallisto index files for each genome.
+    ## Stage 17: Make replicon-level kallisto index files for each benchmarking genome.
     stage17_complete_file = "../results/stage17.done"
     stage17_final_message = "Stage 17 (kallisto index file construction) finished successfully.\n"
     run_pipeline_stage(17, stage17_complete_file, stage17_final_message,
-    make_NCBI_kallisto_indices,
+    make_kallisto_indices,
     kallisto_replicon_ref_dir, kallisto_replicon_index_dir)
     
     #####################################################################################
-    ## Stage 18: run kallisto quant on all genome data, on replicon-level indices.
+    ## Stage 18: run kallisto quant on benchmark  genome data, on replicon-level indices.
     ## NOTE: right now, this only processes paired-end fastq data-- single-end fastq data is ignored.
+    ## the set of benchmarking genomes is filtered such that only genomes with paired-end reads are considered.
     stage18_complete_file = "../results/stage18.done"
     stage18_final_message = "Stage 18 (kallisto quant) finished successfully.\n"
     run_pipeline_stage(18, stage18_complete_file, stage18_final_message,

@@ -725,19 +725,36 @@ def generate_replicon_level_fasta_reference_for_kallisto(gbk_gz_path, outfile):
     return
 
 
-def make_NCBI_replicon_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir):
+def make_benchmark_fasta_refs_for_kallisto(refgenomes_dir, kallisto_ref_outdir, PIRA_low_PCN_benchmark_csv_file):
     ## this function makes a genome fasta file for each genome.
     ## each genome fasta file contains fasta sequences for every replicon.
+
+    ## make the directory if it doesn't exist yet.
+    os.makedirs(kallisto_ref_outdir, exist_ok=True)
+    
+    ## we only run the genomes in the low PCN benchmarking list.
+    benchmark_genome_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
+    ## get rid of duplicates with this logic
+    benchmark_genome_list = sorted(list(set(benchmark_genome_df["AnnotationAccession"].to_list())))
+    
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
         gzpath = os.path.join(refgenomes_dir, gzfile)
-        genome_id = gzfile.split(".gbff.gz")[0].replace("_genomic", "")
+        genome_id = gzfile.split(".gbff.gz")[0].strip("_genomic")
+        
+        ## skip genome_ids that are not in the list of benchmark genomes.
+        if genome_id not in benchmark_genome_list:
+            continue
+
         fasta_outfile = os.path.join(kallisto_ref_outdir, genome_id+".fna")
         generate_replicon_level_fasta_reference_for_kallisto(gzpath, fasta_outfile)
     return
 
 
-def make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
+def make_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
+    ## make the directory if it doesn't exist yet.
+    os.makedirs(kallisto_index_dir, exist_ok=True)
+    
     ref_fasta_filelist = [x for x in os.listdir(kallisto_ref_dir) if x.endswith(".fna")]
     for ref_fasta_file in ref_fasta_filelist:
         ref_fasta_path = os.path.join(kallisto_ref_dir, ref_fasta_file)
@@ -750,6 +767,8 @@ def make_NCBI_kallisto_indices(kallisto_ref_dir, kallisto_index_dir):
 
 
 def run_kallisto_quant(RunID_table_csv, kallisto_index_dir, SRA_data_dir, results_dir):
+    ## make the output directory if it doesn't exist.
+    os.makedirs(results_dir, exist_ok=True)
     ## IMPORTANT: kallisto needs -l -s parameters supplied when run on single-end data.
     ## to avoid this complexity, I only process paired-end Illumina data, and skip single-end data altogether.
     RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
@@ -1444,7 +1463,6 @@ def align_reads_for_benchmark_genomes_with_minimap2(
 
     ## get the AnnotationAccessions of interest for benchmarking.
     benchmark_genomes_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
-
     
     ## get the unique RefSeq_IDs in this dataframe
     AnnotationAccession_list = list(set(benchmark_genomes_df.get_column("AnnotationAccession").to_list()))
@@ -1456,20 +1474,15 @@ def align_reads_for_benchmark_genomes_with_minimap2(
         pl.col("RefSeq_ID").is_in(AnnotationAccession_to_RefSeq_ID_dict.values()))
     
     for annotation_accession in AnnotationAccession_list:
-
-        ## IMPORTANT: this is a hack to get the right paths and filenames.
-        ## IMPORTANT TODO: clean up code to make path names consistent throughout, so that I don't have to do these
-        ## silly hacks.
-        my_genome_basename = annotation_accession + "_genomic"
         
         ## make a subdirectory for the output alignments.
-        genome_alignment_dir = os.path.join(benchmark_alignment_dir, my_genome_basename)
+        genome_alignment_dir = os.path.join(benchmark_alignment_dir, annotation_accession)
 
         if not exists(genome_alignment_dir):
             os.mkdir(genome_alignment_dir)
 
-        ref_genome_fasta_file = my_genome_basename + ".fna"
-        reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome_basename, ref_genome_fasta_file)
+        ref_genome_fasta_file = annotation_accession + ".fna"
+        reference_genome_path = os.path.join(themisto_replicon_ref_dir, annotation_accession, ref_genome_fasta_file)
         
         my_RefSeq_ID = AnnotationAccession_to_RefSeq_ID_dict[annotation_accession]
         my_RunID_df = benchmark_RunID_table_df.filter(pl.col("RefSeq_ID") == my_RefSeq_ID)
@@ -1951,7 +1964,7 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
     ## get the PIRA estimates from disk. 
     all_PIRA_estimates_DataFrame = pl.read_csv(PIRA_PCN_csv_file)
 
-    # Get genomes where all replicons have ReadCount > MIN_READ_COUNT,
+    ## Get genomes where all replicons have ReadCount > MIN_READ_COUNT,
     filtered_PIRA_estimates_DataFrame = (
         all_PIRA_estimates_DataFrame
         .with_columns(
@@ -1978,8 +1991,6 @@ def choose_low_PCN_benchmark_genomes(PIRA_PCN_csv_file, PIRA_low_PCN_benchmark_c
         if my_refseq_id in paired_end_RefSeqID_list:
             paired_end_annotation_accession_list.append(annotation_accession)
 
-
-    print(len(paired_end_annotation_accession_list))
     ## shuffle the list
     random.shuffle(paired_end_annotation_accession_list)
     ## make sure the sample size is less than or equal to the length of the list
@@ -2124,7 +2135,10 @@ def benchmark_low_PCN_genomes_with_breseq(
         ## and two genomes take more than 24h.
         sbatch_string = f"sbatch -p scavenger -t 48:00:00 --mem=16G --cpus-per-task={ncores} --wrap=\"" + breseq_string + "\""
         print(sbatch_string)
-        subprocess.run(sbatch_string, shell=True)
+        if sys.platform == "linux": ## assume that we are running on DCC
+            subprocess.run(sbatch_string, shell=True)
+        else:
+            print("WARNING: will only run breseq for this stage on DCC. exiting without running breseq.")
     return
 
 
