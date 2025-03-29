@@ -1079,19 +1079,19 @@ async def run_command_with_retry(command_string, tempdir=None, max_retries=5, ti
             stdout, stderr = b"", b"Timeout occurred"
 
         if process.returncode == 0:
-            print("Command succeeded:", stdout.decode())
+            logging.info("Command succeeded:", stdout.decode())
             return stdout.decode()
         else:
-            print(f"*********COMMAND FAILED (attempt {retries + 1}):", stderr.decode())
+            logging.info(f"*********COMMAND\n{command_string}\nFAILED (attempt {retries + 1}):", stderr.decode())
             if tempdir is not None:
-                print(f"Removing {tempdir}")
+                logging.info(f"Removing {tempdir}")
                 subprocess.run(f"rm -rf {tempdir}", shell=True)
-                print(f"Remaking {tempdir} before restarting")
+                logging.info(f"Remaking {tempdir} before restarting")
                 os.mkdir(tempdir)
             retries += 1
             await asyncio.sleep(0.1)
     
-    print("Command failed after maximum retries.")
+    logging.info(f"Command {command_string} failed after maximum retries.")
     return
 
 
@@ -1112,7 +1112,7 @@ async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_i
     themisto_build_args = [
         "themisto", "build", "-k", "31", "-i", index_input_filelist,
         "--index-prefix", index_prefix, "--temp-dir", tempdir,
-        "--mem-gigas", "8", "--n-threads", "8", "--file-colors"
+        "--mem-gigas", "6", "--n-threads", "6", "--file-colors"
     ]
     themisto_build_string = " ".join(themisto_build_args)
     print(themisto_build_string)
@@ -1120,14 +1120,22 @@ async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_i
     await run_command_with_retry(themisto_build_string, tempdir)
 
 
-async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir):
+async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir, max_concurrent=3):
     os.makedirs(themisto_index_dir, exist_ok=True)
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def make_themisto_index_with_semaphore(genome_id):
+        async with semaphore:
+            return await make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir)
+
     tasks = [
-        make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir)
+        make_themisto_index_with_semaphore(genome_id)
         for genome_id in os.listdir(themisto_ref_dir)
         if os.path.isdir(os.path.join(themisto_ref_dir, genome_id))
     ]
-    await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return
 
 
 def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
