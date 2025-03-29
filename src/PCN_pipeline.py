@@ -1080,7 +1080,7 @@ async def run_async_command_with_retries(command_string, tempdir=None, max_retri
 
         if process.returncode == 0:
             logging.info("Command succeeded:", stdout.decode())
-            return stdout.decode()
+            return True
         else:
             logging.info(f"*********COMMAND\n{command_string}\nFAILED (attempt {retries + 1}):", stderr.decode())
             if tempdir is not None:
@@ -1092,7 +1092,7 @@ async def run_async_command_with_retries(command_string, tempdir=None, max_retri
             await asyncio.sleep(0.1)
     
     logging.info(f"Command {command_string} failed after maximum retries.")
-    return
+    return False
 
 
 async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_index_dir):
@@ -1116,8 +1116,7 @@ async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_i
     ]
     themisto_build_string = " ".join(themisto_build_args)
     print(themisto_build_string)
-    
-    await run_async_command_with_retries(themisto_build_string, tempdir)
+    return await run_async_command_with_retries(themisto_build_string, tempdir)
 
 
 async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir, max_concurrent=3):
@@ -1135,7 +1134,10 @@ async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir
         if os.path.isdir(os.path.join(themisto_ref_dir, genome_id))
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    return
+
+    success_count = sum(1 for r in results if r is True)
+    logging.info(f"Successfully made indices for {success_count}/{len(results)} genomes")
+    return success_count
 
 
 def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
