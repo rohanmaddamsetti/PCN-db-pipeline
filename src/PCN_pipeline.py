@@ -995,7 +995,7 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
     return
 
 
-def run_command_and_retry_if_it_fails(command_string, tempdir=None, max_retries=3, timeout=20):
+def run_command_and_retry_if_it_fails(command_string, tempdir=None, max_retries=3, timeout=90):
     ## This code handles a bug in themisto build-- sometimes randomly hangs, have to delete temp files
     ## and restart and then it usually works.
     retries = 0
@@ -1128,7 +1128,7 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
 
-        run_command_with_retry(themisto_pseudoalign_string, tempdir)
+        run_command_and_retry_if_it_fails(themisto_pseudoalign_string, tempdir)
     return
 
 
