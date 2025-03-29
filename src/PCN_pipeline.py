@@ -995,7 +995,7 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
     return
 
 
-def old_run_command_with_retry(command_string, tempdir=None, max_retries=3, timeout=20):
+def run_command_and_retry(command_string, tempdir=None, max_retries=3, timeout=20):
     ## This code handles a bug in themisto build-- sometimes randomly hangs, have to delete temp files
     ## and restart and then it usually works.
     retries = 0
@@ -1026,7 +1026,7 @@ def old_run_command_with_retry(command_string, tempdir=None, max_retries=3, time
     return
 
 
-def old_make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
+def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_index_dir):
         os.mkdir(themisto_index_dir)
@@ -1056,12 +1056,12 @@ def old_make_NCBI_themisto_indices(themisto_ref_dir, themisto_index_dir):
 
         themisto_build_string = " ".join(themisto_build_args)
         print(themisto_build_string)
-        run_command_with_retry(themisto_build_string, tempdir)
+        run_command_and_retry(themisto_build_string, tempdir)
             
     return
 
 
-async def run_command_with_retry(command_string, tempdir=None, max_retries=5, timeout=20):
+async def run_async_command_with_retries(command_string, tempdir=None, max_retries=5, timeout=20):
     """Run a shell command with retries, handling potential hangs."""
     retries = 0
     while retries < max_retries:
@@ -1117,7 +1117,7 @@ async def make_themisto_index_for_genome(genome_id, themisto_ref_dir, themisto_i
     themisto_build_string = " ".join(themisto_build_args)
     print(themisto_build_string)
     
-    await run_command_with_retry(themisto_build_string, tempdir)
+    await run_async_command_with_retries(themisto_build_string, tempdir)
 
 
 async def make_themisto_indices_in_parallel(themisto_ref_dir, themisto_index_dir, max_concurrent=3):
