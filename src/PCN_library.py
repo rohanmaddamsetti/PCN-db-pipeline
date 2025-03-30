@@ -1130,7 +1130,7 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         tempdir = os.path.join(my_pseudoalignment_output_dir, "temp")
         if not exists(tempdir):
             os.mkdir(tempdir)
-            
+        
         ## we make corresponding pseudoalignment output files for each SRA dataset.
         ## This list goes into the output listfile.
         output_listfile = os.path.join(themisto_pseudoalignment_dir, genome_id + "_pseudoalignments.txt")
@@ -1143,8 +1143,9 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         ## now run themisto pseudoalign.
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
-
-        run_command_and_retry_if_it_fails(themisto_pseudoalign_string, tempdir)
+        print(themisto_pseudoalign_string)
+        ## don't run this command with retries!
+        subprocess.run(themisto_pseudoalign_string, shell=True)
     return
 
 
