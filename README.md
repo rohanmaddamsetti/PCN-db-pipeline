@@ -38,7 +38,7 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
 - Recommended: Duke Compute Cluster (DCC)
 - Storage: ~15TB for raw sequencing data
 - Memory: 16GB minimum
-- Time: ~2 weeks for full pipeline, mainly spent for the Illumina short-read data download.
+- Time: ~1 week for full pipeline: 3 days for Illumina short-read data download, and a few days for PCN estimation on HPC.
 
 This pipeline can be run locally or on Duke Compute Cluster (DCC).  
 DCC or your high-performance computing cluster (HPC) is recommended,  
@@ -143,8 +143,8 @@ The pipeline generates:
 | Stage | Time Estimate | Data Size |
 |-------|---------------|-----------|
 | Reference Genome Download | ~1-2 days | ~50GB |
-| SRA Data Download | ~12 days | ~15TB |
-| Full Pipeline | ~2 weeks | ~15TB |
+| SRA Data Download | ~3 days | ~15TB |
+| Full Pipeline | ~1 week | ~15TB |
 
 Note: Run the full pipeline in the `/work` directory on DCC since 15TB+ of disk space is needed.  
 
