@@ -40,7 +40,7 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 - Recommended: Duke Compute Cluster (DCC)
 - Storage: ~15TB for raw sequencing data
 - Memory: 16GB minimum
-- Time: ~1 week for full pipeline: 3 days for Illumina short-read data download, and a few days for PCN estimation on HPC.
+- Time: ~2 week for full pipeline: 3 days for Illumina short-read data download, and a few days for PCN estimation on HPC.
 
 This pipeline can be run locally or on Duke Compute Cluster (DCC).  
 DCC or your high-performance computing cluster (HPC) is recommended,  
