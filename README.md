@@ -151,10 +151,3 @@ The pipeline generates:
 
 Note: Run the full pipeline in the `/work` directory on DCC since 15TB+ of disk space is needed.  
 
-
-Note 2 (DELETE ME IF NOT LONGER RELEVANT):
-SRA data for ~6000 genomes was downloaded, but only have about ~4500 reference genomes. to understand this discrepancy, I ran:
-``` bash
-cd ../data/NCBI-reference-genomes
-ls | grep ".gbff.gz" | sed 's/_genomic.gbff.gz$//' > ../../results/downloaded-genome-ids.txt
-```
