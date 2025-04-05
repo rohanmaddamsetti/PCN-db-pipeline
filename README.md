@@ -15,14 +15,13 @@ A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 ## Overview
 
 This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
-- NCBI genome data
-- SRA sequencing data
+- NCBI RefSeq genome annotation data
+- NCBI SRA Illumina short-read sequencing data
 - Themisto for pseudoalignment
 - Kallisto for transcript quantification (not critical for PCN estimation, used for control experiments)
 - Breseq for mutation analysis (not critical for PCN estimation, used for control experiments)
 
-All classes and functions are in the source code file src/PCN_library.py.  
-Each stage of the pipeline is described in the comments in the source code file src/PCN_pipeline.py.  
+All classes and functions are in the source code file src/PCN_library.py. Each stage of the pipeline is described in the comments in the source code file src/PCN_pipeline.py.  
 
 
 ## Requirements
