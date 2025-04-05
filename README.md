@@ -21,6 +21,9 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
 - Kallisto for transcript quantification (not critical for PCN estimation, used for control experiments)
 - Breseq for mutation analysis (not critical for PCN estimation, used for control experiments)
 
+All classes and functions are in the source code file src/PCN_library.py.  
+Each stage of the pipeline is described in the comments in the source code file src/PCN_pipeline.py.  
+
 
 ## Requirements
 
@@ -91,6 +94,7 @@ Then, copy the source code in this github repository into the src/ directory for
    sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
    ```
 
+Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
 
 ## Using Docker (Recommended by Irida for testing):
    ```bash
@@ -144,7 +148,7 @@ The pipeline generates:
 |-------|---------------|-----------|
 | Reference Genome Download | ~1-2 days | ~50GB |
 | SRA Data Download | ~3 days | ~15TB |
-| Full Pipeline | ~1 week | ~15TB |
+| Full Pipeline | ~2 weeks | ~15TB |
 
 Note: Run the full pipeline in the `/work` directory on DCC since 15TB+ of disk space is needed.  
 
