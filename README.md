@@ -27,14 +27,14 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 ## Requirements
 
 ### Software
-- Python 3.10+
-- Biopython
-- SRA-Toolkit
-- pysradb
-- ncbi-datasets-cli
-- Themisto
-- Breseq
-- Kallisto
+- Python 3.11+
+- Biopython 1.85
+- SRA-Toolkit 3.2.0
+- pysradb 2.2.2
+- ncbi-datasets-cli 17.1.0
+- Themisto 3.2.2
+- Breseq 0.37+
+- Kallisto 0.51.1
 
 ### Hardware
 - Recommended: Duke Compute Cluster (DCC)
