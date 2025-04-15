@@ -799,6 +799,7 @@ def run_kallisto_quant(RunID_table_csv, kallisto_index_dir, SRA_data_dir, result
                 subprocess.run(slurm_string, shell=True)
             else:
                 print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+                print(kallisto_quant_string)
                 subprocess.run(kallisto_quant_string, shell=True)
     return
 
@@ -1143,9 +1144,16 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         ## now run themisto pseudoalign.
         themisto_pseudoalign_args = ["themisto", "pseudoalign", "--query-file-list", SRAdata_listfile, "--index-prefix", my_index_prefix, "--temp-dir", tempdir, "--out-file-list", output_listfile, "--n-threads", "4", "--threshold", "0.7"]
         themisto_pseudoalign_string = " ".join(themisto_pseudoalign_args)
-        print(themisto_pseudoalign_string)
         ## don't run this command with retries!
-        subprocess.run(themisto_pseudoalign_string, shell=True)
+        slurm_string = "sbatch -p scavenger --cpus-per-task=4 --mem=16G --wrap=" + "\"" + themisto_pseudoalign_string + "\""
+        if sys.platform == "linux": ## assume that we are running on DCC
+            print("sys.platform == 'linux' so we assume this script is being run on the Duke Compute Cluster")
+            print(slurm_string)
+            subprocess.run(slurm_string, shell=True)
+        else:
+            print("sys.platform != 'linux' so we assume this script is being run on a mac laptop")
+            print(themisto_pseudoalign_string)
+            subprocess.run(themisto_pseudoalign_string, shell=True)
     return
 
 
