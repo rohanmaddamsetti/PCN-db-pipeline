@@ -1254,7 +1254,11 @@ def naive_themisto_PCN_estimation(themisto_results_csv_file, replicon_length_csv
     ## now normalize SequencingCoverage by LongestRepliconCoverage for each genome to calculate PCN.
     naive_themisto_PCN_df = naive_themisto_read_count_df.join(
         longest_replicon_df, on = "AnnotationAccession", coalesce=True).with_columns(
-            (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber"))
+            (pl.col("SequencingCoverage") / pl.col("LongestRepliconCoverage")).alias("CopyNumber")).select(
+                ## super annoying, not sure why the AnnotationAccession_right and SeqType_right columns
+                ## are kept. This select command removes these redundancies.
+                ['AnnotationAccession', 'SeqID', 'SeqType', 'ReadCount', 'replicon_length', 'SequencingCoverage',
+                 'LongestRepliconCoverage','CopyNumber'])
 
     ## now write the naive PCN estimates to file.
     naive_themisto_PCN_df.write_csv(naive_themisto_PCN_csv_file)    
