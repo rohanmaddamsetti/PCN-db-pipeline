@@ -37,6 +37,7 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 - Kallisto 0.51.1
 
 ### Hardware
+- Linux High Performance Computing Cluster (HPC) with SLURM job scheduler (https://slurm.schedmd.com/)
 - Recommended: Duke Compute Cluster (DCC)
 - Storage: ~15TB for raw sequencing data
 - Memory: 16GB minimum
@@ -48,6 +49,13 @@ due to the large amount of FASTQ sequencing data downloaded for PCN estimation.
 
 
 ## Setup
+
+### Notes before setting up the pipeline.
+
+This pipeline should be run on a Linux HPC system with a SLURM job manager.
+The pipeline *can* be run on MacOS (we wrote and debugged most of the pipeline on MacOS) using the command “python PCN_pipeline.py”; however, we recommend that users *only* run the pipeline on MacOS for debugging or testing individual stages for the following reasons:
+1) Several stages of the pipeline submit thousands of HPC jobs in parallel to speed up computation, and this is not possible on a laptop.
+2) The SRA data download is substantial– ~15TB of sequencing reads – and so a full download is not possible.  
 
 1. Create project structure by downloading or cloning this github repository.
 Alternatively, create a new top-level project directory
