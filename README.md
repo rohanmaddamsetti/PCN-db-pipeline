@@ -103,39 +103,6 @@ Then, copy the source code in this github repository into the src/ directory for
 
 Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
 
-## Using Docker (Recommended by Irida for testing):
-   ```bash
-   # Build the Docker image
-   docker build -t pcn-pipeline:latest .
-
-   # Run the container with mounted volumes for data persistence
-   docker run -v $(pwd)/data:/app/data \
-             -v $(pwd)/results:/app/results \
-             pcn-pipeline:latest
-
-   # To run in test mode (default)
-   # This will process a smaller subset of genomes
-   docker run -v $(pwd)/data:/app/data \
-             -v $(pwd)/results:/app/results \
-             -e TEST_MODE=True \
-             -e TEST_GENOME_COUNT=1000 \
-             -e TEST_DOWNLOAD_LIMIT=50 \
-             pcn-pipeline:latest
-
-   # To run in production mode
-   docker run -v $(pwd)/data:/app/data \
-             -v $(pwd)/results:/app/results \
-             -e TEST_MODE=False \
-             pcn-pipeline:latest
-
-   ```
-
-   Notes:
-   - The `-v` flags create persistent volumes, so your data and results are saved even after the container stops
-   - Environment variables can be combined as needed
-   - Data will be stored in ./data and results in ./results on your host machine
-   - First run may take longer as it downloads and processes reference data
-
 
 ## Expected Output
 
