@@ -43,19 +43,17 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 - Memory: 16GB minimum
 - Time: ~2 week for full pipeline: 3 days for Illumina short-read data download, and a few days for PCN estimation on HPC.
 
-This pipeline can be run locally or on Duke Compute Cluster (DCC).  
-DCC or your high-performance computing cluster (HPC) is recommended,  
-due to the large amount of FASTQ sequencing data downloaded for PCN estimation.  
+This pipeline can be run locally or on an HPC like the Duke Compute Cluster (DCC). An HPC environment with SLURM is required, due to the large amount of FASTQ sequencing data downloaded for PCN estimation.  
 
-
-## Setup
-
-### Notes before setting up the pipeline.
+## Notes before setting up the pipeline
 
 This pipeline should be run on a Linux HPC system with a SLURM job manager.
 The pipeline *can* be run on MacOS (we wrote and debugged most of the pipeline on MacOS) using the command “python PCN_pipeline.py”; however, we recommend that users *only* run the pipeline on MacOS for debugging or testing individual stages for the following reasons:
 1) Several stages of the pipeline submit thousands of HPC jobs in parallel to speed up computation, and this is not possible on a laptop.
 2) The SRA data download is substantial– ~15TB of sequencing reads – and so a full download is not possible.  
+
+
+## Setup
 
 1. Create project structure by downloading or cloning this github repository.
 Alternatively, create a new top-level project directory
