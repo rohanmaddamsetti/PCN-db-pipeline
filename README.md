@@ -37,13 +37,11 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 - Kallisto 0.51.1
 
 ### Hardware
-- Linux High Performance Computing Cluster (HPC) with SLURM job scheduler (https://slurm.schedmd.com/)
-- Recommended: Duke Compute Cluster (DCC)
+- Required: Linux High Performance Computing Cluster (HPC) with SLURM job scheduler (https://slurm.schedmd.com/)
 - Storage: ~15TB for raw sequencing data
 - Memory: 16GB minimum
 - Time: ~2 week for full pipeline: 3 days for Illumina short-read data download, and a few days for PCN estimation on HPC.
-
-This pipeline can be run locally or on an HPC like the Duke Compute Cluster (DCC). An HPC environment with SLURM is required, due to the large amount of FASTQ sequencing data downloaded for PCN estimation.  
+- Recommended: Duke Compute Cluster (DCC)
 
 ## Notes before setting up the pipeline
 
