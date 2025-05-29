@@ -37,6 +37,7 @@ def run_PCN_pipeline():
     log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
     configure_logging(log_file)
 
+    
     if TEST_MODE:
         print("RUNNING IN TEST MODE: Set TEST_MODE = False in src/PCN_library.py if running full pipeline")
         initialize_test_mode()
