@@ -16,7 +16,6 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 ## Import all code from PCN_library into this namespace.
 from PCN_library import *
 
-
 ## Test mode configuration
 TEST_MODE = True  ## Set to True for testing
 """ IMPORTANT: the following TEST_MODE configuration variables are set in PCN_library.py in lines 72-73.
