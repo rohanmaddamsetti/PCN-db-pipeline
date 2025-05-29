@@ -70,7 +70,7 @@ Then, copy the source code in this github repository into the src/ directory for
    curl https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt > data/prokaryotes.txt ## on mac and linux
    ```
 
-3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_*) to RefSeq Accessions (GCF_*).
+3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_\*) to RefSeq Accessions (GCF_\*).
    ```bash
    grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
    ```
@@ -99,7 +99,9 @@ Then, copy the source code in this github repository into the src/ directory for
 
    You can submit to a partition specific to your lab as well, this is what we run on the Duke Compute Cluster in the You lab.
 
+   ```
    sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+   ```
 
 One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment, and run the pipeline:
 
