@@ -16,12 +16,12 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 ## Import all code from PCN_library into this namespace.
 from PCN_library import *
 
-## Test mode configuration
-TEST_MODE = True  ## Set to True for testing
-""" IMPORTANT: the following TEST_MODE configuration variables are set in PCN_library.py in lines 72-73.
+"""
+IMPORTANT: TEST_MODE global configuration variables are set in PCN_library.py in lines 70-75.
 
 Edit these values in PCN_library.py as needed when running in TEST_MODE:
 
+TEST_MODE = True ## Set to False to run the full pipeline (PRODUCTION MODE).
 TEST_GENOME_COUNT = 100
 TEST_DOWNLOAD_LIMIT= 50
 """
@@ -38,6 +38,7 @@ def run_PCN_pipeline():
     configure_logging(log_file)
 
     if TEST_MODE:
+        print("RUNNING IN TEST MODE: Set TEST_MODE = False in src/PCN_library.py if running full pipeline")
         initialize_test_mode()
     else:
         logging.info("Running in PRODUCTION MODE")
