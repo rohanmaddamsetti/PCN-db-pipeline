@@ -104,9 +104,7 @@ Then, copy the source code in this github repository into the src/ directory for
    sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
    ```
 
-
-One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment,
-    and run the pipeline:
+One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment, and run the pipeline:
 
 
     ```
