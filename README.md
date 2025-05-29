@@ -103,16 +103,17 @@ Then, copy the source code in this github repository into the src/ directory for
     ```bash
     sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
     ```
-  
-    One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment,
+
+One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment,
     and run the pipeline:
   
     ```bash
     sbatch --mem=16G -t 00:00:10 -p mit_normal --wrap=“source /home/software/anaconda3/2023.07/etc/profile.d/conda.sh && conda activate PCNdb_env && python PCN_pipeline.py”
     ```
 
-Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
-
+### Additional notes on running the pipeline:
+    - Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
+    - The pipeline is currently set to *Test Mode*, so that a limited number of genomes are downloaded. To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 21.
 
 ## Expected Output
 
