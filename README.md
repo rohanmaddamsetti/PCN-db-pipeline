@@ -94,8 +94,15 @@ Then, copy the source code in this github repository into the src/ directory for
    ```bash
    conda activate PCNdb_env  
    cd src/  
-   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+   sbatch --mem=16G -t 430:00:00 --wrap="python PCN_pipeline.py"
    ```
+
+   You can submit to a partition specific to your lab as well, this is what we run on the Duke Compute Cluster in the You lab.
+   
+
+    ```bash
+    sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+    ```
 
 Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
 
