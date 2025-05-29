@@ -19,8 +19,6 @@ from PCN_library import *
 
 ## Test mode configuration
 TEST_MODE = True  ## Set to True for testing
-TEST_GENOME_COUNT = 1000  ## Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 50  ## Increase from 10 to 50 for better testing
 
 ################################################################################
 ## Main pipeline code.

@@ -66,6 +66,11 @@ GCF_000025625.1_ASM2562v1
 GCF_014872735.1_ASM1487273v1
 """
 
+################################################################################
+## Global configuration variables for TEST_MODE
+
+TEST_GENOME_COUNT = 100  ## Number of genomes to process
+TEST_DOWNLOAD_LIMIT = 50  ## Increase from 10 to 50 for better testing
 
 ################################################################################
 ## Classes.
