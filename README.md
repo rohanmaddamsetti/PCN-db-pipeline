@@ -91,6 +91,9 @@ Then, copy the source code in this github repository into the src/ directory for
 
 ## Running the Pipeline
 
+**The pipeline is current in TEST MODE, running on a small set of genomes. To run the full pipeline, set `TEST_MODE = False` in `src/PCN_library.py`.**
+
+
    ```bash
    conda activate PCNdb_env  
    cd src/  
