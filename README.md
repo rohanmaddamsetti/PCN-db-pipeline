@@ -81,7 +81,7 @@ Then, copy the source code in this github repository into the src/ directory for
    conda activate PCNdb_env
    pip install pysradb biopython HTSeq beautifulsoup4 polars
    conda install -c bioconda kallisto breseq
-   conda install -c conda-forge ncbi-datasets-cli
+   conda install -c conda-forge ncbi-datasets-cli tqdm
    ```
 
 5. Install SRA-Toolkit:
@@ -102,6 +102,13 @@ Then, copy the source code in this github repository into the src/ directory for
 
     ```bash
     sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
+    ```
+  
+    One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment,
+    and run the pipeline:
+  
+    ```bash
+    sbatch --mem=16G -t 00:00:10 -p mit_normal --wrap=“source /home/software/anaconda3/2023.07/etc/profile.d/conda.sh && conda activate PCNdb_env && python PCN_pipeline.py”
     ```
 
 Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
