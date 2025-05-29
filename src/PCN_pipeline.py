@@ -19,6 +19,13 @@ from PCN_library import *
 
 ## Test mode configuration
 TEST_MODE = True  ## Set to True for testing
+""" IMPORTANT: the following TEST_MODE configuration variables are set in PCN_library.py in lines 72-73.
+
+Edit these values in PCN_library.py as needed when running in TEST_MODE:
+
+TEST_GENOME_COUNT = 100
+TEST_DOWNLOAD_LIMIT= 50
+"""
 
 ################################################################################
 ## Main pipeline code.
