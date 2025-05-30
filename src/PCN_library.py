@@ -70,8 +70,8 @@ GCF_014872735.1_ASM1487273v1
 ## TEST_MODE configuration variables
 
 TEST_MODE = True  ## Set to True for testing
-TEST_GENOME_COUNT = 100  ## Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 50  ## Increase from 10 to 50 for better testing
+TEST_GENOME_COUNT = 10  ## Number of genomes to process
+TEST_DOWNLOAD_LIMIT = 2
 
 ################################################################################
 ## Classes.
@@ -1002,7 +1002,7 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
 
     ## make the output directory if it does not exist.
     if not exists(themisto_fasta_ref_outdir):
-        os.mkdir(themisto_fasta_ref_outdir)
+        os.makedirs(themisto_fasta_ref_outdir)
 
     gzfilelist = [x for x in os.listdir(refgenomes_dir) if x.endswith("gbff.gz")]
     for gzfile in gzfilelist:
@@ -1012,7 +1012,7 @@ def make_NCBI_replicon_fasta_refs_for_themisto(refgenomes_dir, themisto_fasta_re
         fasta_outdir = os.path.join(themisto_fasta_ref_outdir, genome_id)
         ## make the fasta output directory if it does not exist.
         if not exists(fasta_outdir):
-            os.mkdir(fasta_outdir)
+            os.makedirs(fasta_outdir)
         generate_replicon_fasta_references_for_themisto(gzpath, fasta_outdir)
         generate_replicon_fasta_reference_list_file_for_themisto(fasta_outdir)
     return
@@ -1041,7 +1041,7 @@ def run_command_and_retry_if_it_fails(command_string, tempdir=None, max_retries=
                 print(f"removing {tempdir}")
                 subprocess.run(f"rm -rf {tempdir}", shell=True)
                 print(f"remaking {tempdir} before restarting")
-                os.mkdir(tempdir)
+                os.makedirs(tempdir)
             retries += 1
             time.sleep(0.1)  ## Small delay before retrying
     
@@ -1052,7 +1052,7 @@ def run_command_and_retry_if_it_fails(command_string, tempdir=None, max_retries=
 def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_index_dir):
-        os.mkdir(themisto_index_dir)
+        os.makedirs(themisto_index_dir)
 
     ## each directory is named after the genome_id of the given genome.
     for genome_id in os.listdir(themisto_ref_dir):
@@ -1066,14 +1066,14 @@ def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
         ## make the directory for the index files, if it does not exist.
         genome_index_dir = os.path.join(themisto_index_dir, genome_id)
         if not exists(genome_index_dir):
-            os.mkdir(genome_index_dir)
+            os.makedirs(genome_index_dir)
         ## set the index_prefix to write index files into the genome_index_dir.
         index_prefix = os.path.join(genome_index_dir, genome_id)
         
         ## make the temp directory if it doesn't exist.
         tempdir = os.path.join(genome_index_dir, "temp")
         if not exists(tempdir):
-            os.mkdir(tempdir)
+            os.makedirs(tempdir)
         
         themisto_build_args = ["themisto", "build", "-k","31", "-i", index_input_filelist, "--index-prefix", index_prefix, "--temp-dir", tempdir, "--mem-gigas", "8", "--n-threads", "8", "--file-colors"]
 
@@ -1087,7 +1087,7 @@ def make_themisto_indices(themisto_ref_dir, themisto_index_dir):
 def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, themisto_pseudoalignment_dir):
     ## make the output directory if it does not exist.
     if not exists(themisto_pseudoalignment_dir):
-        os.mkdir(themisto_pseudoalignment_dir)
+        os.makedirs(themisto_pseudoalignment_dir)
 
     ## make this data structure
     RefSeq_to_SRA_RunList_dict = make_RefSeq_to_SRA_RunList_dict(RunID_table_csv)
@@ -1131,12 +1131,12 @@ def run_themisto_pseudoalign(RunID_table_csv, themisto_index_dir, SRA_data_dir, 
         ## make the directory for the pseudoalignments.
         my_pseudoalignment_output_dir = os.path.join(themisto_pseudoalignment_dir, genome_id)
         if not exists(my_pseudoalignment_output_dir):
-            os.mkdir(my_pseudoalignment_output_dir)
+            os.makedirs(my_pseudoalignment_output_dir)
 
         ## make the temp directory if it doesn't exist.
         tempdir = os.path.join(my_pseudoalignment_output_dir, "temp")
         if not exists(tempdir):
-            os.mkdir(tempdir)
+            os.makedirs(tempdir)
         
         ## we make corresponding pseudoalignment output files for each SRA dataset.
         ## This list goes into the output listfile.
@@ -1374,7 +1374,7 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
 
     ## make the directory for filtered multireads  if it does not exist.
     if not exists(multiread_data_dir):
-        os.mkdir(multiread_data_dir)
+        os.makedirs(multiread_data_dir)
 
     files_in_pseudoalignment_dir = [x for x in os.listdir(themisto_pseudoalignment_dir)]
     paths_in_pseudoalignment_dir = [os.path.join(themisto_pseudoalignment_dir, x) for x in files_in_pseudoalignment_dir]
@@ -1422,7 +1422,7 @@ def filter_fastq_files_for_multireads(multiread_data_dir, themisto_pseudoalignme
 
                 ## if there are multireads, then make multiread_genome_dir for this genome.
                 if not exists(multiread_genome_dir):
-                    os.mkdir(multiread_genome_dir)
+                    os.makedirs(multiread_genome_dir)
                 
                 ## IMPORTANT: read indices in the themisto pseudoalignments are zero-based (first index is 0).
                 multiread_indices = {x[0] for x in list_of_multiread_tuples} ## this is a set
@@ -1478,7 +1478,7 @@ def align_reads_for_benchmark_genomes_with_minimap2(
 
     ## make the directory for read alignments  if it does not exist.
     if not exists(benchmark_alignment_dir):
-        os.mkdir(benchmark_alignment_dir)
+        os.makedirs(benchmark_alignment_dir)
 
     ## get the AnnotationAccessions of interest for benchmarking.
     benchmark_genomes_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
@@ -1498,7 +1498,7 @@ def align_reads_for_benchmark_genomes_with_minimap2(
         genome_alignment_dir = os.path.join(benchmark_alignment_dir, annotation_accession)
 
         if not exists(genome_alignment_dir):
-            os.mkdir(genome_alignment_dir)
+            os.makedirs(genome_alignment_dir)
 
         ref_genome_fasta_file = annotation_accession + ".fna"
         reference_genome_path = os.path.join(themisto_replicon_ref_dir, annotation_accession, ref_genome_fasta_file)
@@ -1533,7 +1533,7 @@ def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir
 
     ## make the directory for multiread alignments  if it does not exist.
     if not exists(multiread_alignment_dir):
-        os.mkdir(multiread_alignment_dir)
+        os.makedirs(multiread_alignment_dir)
     
     genomes_with_multireads = [x for x in os.listdir(multiread_data_dir) if x.startswith("GCF")]
     for my_genome in genomes_with_multireads:
@@ -1541,7 +1541,7 @@ def align_multireads_with_minimap2(themisto_replicon_ref_dir, multiread_data_dir
         ## make a subdirectory for the multiread alignments.
         multiread_genome_alignment_dir = os.path.join(multiread_alignment_dir, my_genome)
         if not exists(multiread_genome_alignment_dir):
-            os.mkdir(multiread_genome_alignment_dir)
+            os.makedirs(multiread_genome_alignment_dir)
         
         ref_genome_fasta_file = my_genome + ".fna"
         reference_genome_path = os.path.join(themisto_replicon_ref_dir, my_genome, ref_genome_fasta_file)
@@ -2102,7 +2102,7 @@ def benchmark_low_PCN_genomes_with_breseq(
 
     ## make the directory for breseq results  if it does not exist.
     if not exists(breseq_benchmark_results_dir):
-        os.mkdir(breseq_benchmark_results_dir)
+        os.makedirs(breseq_benchmark_results_dir)
 
     ## get the AnnotationAccessions of interest for benchmarking.
     benchmark_genomes_df = pl.read_csv(PIRA_low_PCN_benchmark_csv_file)
@@ -2121,7 +2121,7 @@ def benchmark_low_PCN_genomes_with_breseq(
         ## make a subdirectory for the breseq output.
         my_breseq_outdir = os.path.join(breseq_benchmark_results_dir, annotation_accession)
         if not exists(my_breseq_outdir):
-            os.mkdir(my_breseq_outdir)
+            os.makedirs(my_breseq_outdir)
 
         ## IMPORTANT: breseq needs an unzipped version of this file. let's keep the original though (use -c option).
         ref_genome_gbk_gz_file = annotation_accession + "_genomic.gbff.gz"
@@ -2320,7 +2320,7 @@ async def run_async_command_with_retries(command_string, tempdir=None, max_retri
                 logging.info(f"Removing {tempdir}")
                 subprocess.run(f"rm -rf {tempdir}", shell=True)
                 logging.info(f"Remaking {tempdir} before restarting")
-                os.mkdir(tempdir)
+                os.makedirs(tempdir)
             retries += 1
             await asyncio.sleep(0.1)
     
