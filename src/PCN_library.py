@@ -1809,7 +1809,7 @@ def run_PIRA_on_all_genomes(multiread_alignment_dir, themisto_replicon_ref_dir, 
     
     ## only run PIRA on genomes with multireads.
     genomes_with_multireads = [x for x in os.listdir(multiread_alignment_dir) if x.startswith("GCF")]
-    if len(genome_with_multireads) == 0:
+    if len(genomes_with_multireads) == 0:
         print("No genomes in these data have multireads-- PIRA not run since it is not needed.")
         quit()
     
