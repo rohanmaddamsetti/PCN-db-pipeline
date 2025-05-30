@@ -16,15 +16,15 @@ are running this code locally, and cannot use slurm to submit many jobs in paral
 ## Import all code from PCN_library into this namespace.
 from PCN_library import *
 
+
+################################################################################
 """
-IMPORTANT: TEST_MODE global configuration variables are set in PCN_library.py in lines 70-75.
-
-Edit these values in PCN_library.py as needed when running in TEST_MODE:
-
+TEST_MODE configuration variables
+Edit these values as needed when running in TEST_MODE:
+"""
 TEST_MODE = True ## Set to False to run the full pipeline (PRODUCTION MODE).
-TEST_GENOME_COUNT = 100
-TEST_DOWNLOAD_LIMIT= 50
-"""
+TEST_GENOME_COUNT = 20  ## Number of genomes to process.
+TEST_DOWNLOAD_LIMIT = 2 ## Number of genomes for measuring PCN (genomes where we download read data)
 
 ################################################################################
 ## Main pipeline code.

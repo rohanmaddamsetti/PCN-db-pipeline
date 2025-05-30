@@ -66,12 +66,6 @@ GCF_000025625.1_ASM2562v1
 GCF_014872735.1_ASM1487273v1
 """
 
-################################################################################
-## TEST_MODE configuration variables
-
-TEST_MODE = True  ## Set to True for testing
-TEST_GENOME_COUNT = 20  ## Number of genomes to process
-TEST_DOWNLOAD_LIMIT = 2
 
 ################################################################################
 ## Classes.
@@ -226,7 +220,7 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_cs
             for i, row in enumerate(reader):
                 
                 if TEST_MODE and successful_entries >= TEST_DOWNLOAD_LIMIT:
-                    logging.info(f"Test mode: stopping calls to {TEST_DOWNLOAD_LIMIT} genomes")
+                    logging.info(f"Test mode: stopping calls once SRA Run IDs for {TEST_DOWNLOAD_LIMIT} genomes collected")
                     print(f"Test mode: stopping RefSeq_SRA_RunID table after {TEST_DOWNLOAD_LIMIT} genome entries")
                     break
 
@@ -428,43 +422,15 @@ def fetch_reference_genomes(RunID_table_file, refseq_accession_to_ftp_path_dict,
 def get_Run_IDs_from_RunID_table(RunID_table_csv):
     """Get Run IDs from the RunID table CSV file."""
     Run_IDs = []
-    
-    # Check if file exists
-    if not exists(RunID_table_csv):
-        logging.warning(f"RunID table {RunID_table_csv} does not exist")
-        
-        # In test mode, provide some hardcoded Run IDs for testing
-        if TEST_MODE:
-            logging.info("Test mode: Using hardcoded Run IDs for testing")
-            # These are example SRR IDs that should work for testing
-            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
-            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
-        return []
-    
-    try:
-        with open(RunID_table_csv, 'r') as f:
-            reader = csv.reader(f)
-            next(reader)  # Skip header
-            for row in reader:
-                if len(row) >= 3 and row[2].strip():  # Check if Run_ID column has data
-                    Run_IDs.append(row[2])
-        
-        logging.info(f"Found {len(Run_IDs)} Run IDs in {RunID_table_csv}")
-        
-        # If no Run IDs found but in test mode, use hardcoded IDs
-        if not Run_IDs and TEST_MODE:
-            logging.info("Test mode: No Run IDs found in table, using hardcoded Run IDs")
-            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
-            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
-            
-        return Run_IDs
-    except Exception as e:
-        logging.error(f"Error reading RunID table: {e}")
-        if TEST_MODE:
-            logging.info("Test mode: Using hardcoded Run IDs due to error")
-            test_run_ids = ["SRR8181778", "SRR8181779", "SRR10527348"]
-            return test_run_ids[:TEST_DOWNLOAD_LIMIT]
-        return []
+    with open(RunID_table_csv, 'r') as f:
+        reader = csv.reader(f)
+        next(reader)  ## Skip header
+        for row in reader:
+            row = row.strip() ## remove whitespace
+            ## The Run_ID column is the 3rd row (index 2)
+            Run_IDs.append(row[2])
+    logging.info(f"Found {len(Run_IDs)} Run IDs in {RunID_table_csv}")    
+    return Run_IDs
 
 
 async def prefetch_fastq_reads(run_id, SRA_data_dir, max_retries=5):
