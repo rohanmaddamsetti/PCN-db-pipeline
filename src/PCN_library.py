@@ -426,9 +426,9 @@ def get_Run_IDs_from_RunID_table(RunID_table_csv):
         reader = csv.reader(f)
         next(reader)  ## Skip header
         for row in reader:
-            row = row.strip() ## remove whitespace
             ## The Run_ID column is the 3rd row (index 2)
-            Run_IDs.append(row[2])
+            ## remove whitespace with strip, if needed.
+            Run_IDs.append(row[2].strip())
     logging.info(f"Found {len(Run_IDs)} Run IDs in {RunID_table_csv}")    
     return Run_IDs
 

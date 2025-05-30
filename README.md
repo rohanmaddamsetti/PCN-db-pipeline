@@ -91,8 +91,6 @@ Then, copy the source code in this github repository into the src/ directory for
 
 ## Running the Pipeline
 
-**The pipeline is current in TEST MODE, running on a small set of genomes. To run the full pipeline, set `TEST_MODE = False` in `src/PCN_library.py`.**
-
 
    ```bash
    conda activate PCNdb_env  
@@ -115,7 +113,7 @@ One our our users uses the MIT compute cluster, and uses the following snippet t
 Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
 
 
-The pipeline is currently set to **Test Mode**, so that a limited number of genomes are downloaded. To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 21.
+The pipeline is currently set to **Test Mode**, so that a limited number of genomes are downloaded. To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 25.
 
 ## Expected Output
 

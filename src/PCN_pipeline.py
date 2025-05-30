@@ -25,6 +25,7 @@ Edit these values as needed when running in TEST_MODE:
 TEST_MODE = True ## Set to False to run the full pipeline (PRODUCTION MODE).
 TEST_GENOME_COUNT = 20  ## Number of genomes to process.
 TEST_DOWNLOAD_LIMIT = 2 ## Number of genomes for measuring PCN (genomes where we download read data)
+TEST_PYSRADB = False ## set to try to test that pysradb is working (only runs when TEST_MODE == True)
 
 ################################################################################
 ## Main pipeline code.
@@ -98,15 +99,15 @@ def run_PCN_pipeline():
         logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
         print("RUNNING IN TEST MODE: Set TEST_MODE = False in src/PCN_library.py if running full pipeline")
         print()
+        if TEST_PYSRADB:
+            try:
+                print("Testing pysradb:")
+                test_pysradb_functionality()
+            except Exception as e:
+                logging.error(f"pysradb test failed: {str(e)}")
 
-        print("Testing pysradb:")
-        try:
-            test_pysradb_functionality()
-        except Exception as e:
-            logging.error(f"pysradb test failed: {str(e)}")
-            ## Continue anyway
         print()
-        print(f"creating a small subset of {TEST_GENOME_COUNT} genomes for testing\n")
+        print(f"using a small subset of {TEST_GENOME_COUNT} genomes for testing\n")
         ## make a smaller prokaryotes_with_plasmids_file for testing, and use that for testing the pipeline.
         prokaryotes_with_plasmids_file = create_test_subset(prokaryotes_with_plasmids_file, TEST_GENOME_COUNT)
         
@@ -171,9 +172,6 @@ def run_PCN_pipeline():
             stage2_complete_log.write("reference genomes downloaded successfully.\n")
             quit()
             
-        if TEST_MODE:
-            logging.info("Test mode: Stage 2 completed successfully")
-
     
     #####################################################################################
     ## Stage 3: download Illumina reads for the genomes from the NCBI Short Read Archive (SRA).
