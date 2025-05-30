@@ -70,7 +70,7 @@ GCF_014872735.1_ASM1487273v1
 ## TEST_MODE configuration variables
 
 TEST_MODE = True  ## Set to True for testing
-TEST_GENOME_COUNT = 10  ## Number of genomes to process
+TEST_GENOME_COUNT = 20  ## Number of genomes to process
 TEST_DOWNLOAD_LIMIT = 2
 
 ################################################################################
@@ -111,33 +111,6 @@ class RateLimiter:
 
 ################################################################################
 ## Functions.
-
-def test_pysradb_functionality():
-    """Test if pysradb is working correctly with a known SRA ID."""
-    test_sra_id = "SRS7822362"  
-    logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
-    
-    try:
-        # Run the command directly
-        cmd = f"pysradb metadata {test_sra_id}"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            logging.info(f"pysradb test successful. Output:\n{result.stdout}")
-            
-            # Try to parse the output
-            lines = result.stdout.strip().split('\n')
-            if len(lines) > 1:
-                logging.info(f"Found {len(lines)-1} potential Run IDs")
-                for line in lines[1:]:
-                    logging.info(f"Potential Run ID line: {line}")
-            else:
-                logging.warning("No data rows in pysradb output")
-        else:
-            logging.error(f"pysradb test failed with error: {result.stderr}")
-    except Exception as e:
-        logging.error(f"Error testing pysradb: {e}")
-    return
 
 
 def get_SRA_ID_from_RefSeqID(refseq_id):
@@ -2198,35 +2171,6 @@ def parse_breseq_results(breseq_outdir, results_csv_path):
     return
 
 
-def create_test_subset():
-    """Create a subset of genomes for testing"""
-    original_file = "../results/complete-prokaryotes-with-plasmids.txt"
-    test_file = "../results/test-prokaryotes-with-plasmids.txt"
-    
-    logging.info(f"Creating test subset with {TEST_GENOME_COUNT} genomes")
-    
-    # Read the original file
-    with open(original_file, "r") as f:
-        lines = f.readlines()
-        header = lines[0]
-        data_lines = lines[1:]
-        
-        # Take the first TEST_GENOME_COUNT genomes or all if fewer
-        subset_count = min(TEST_GENOME_COUNT, len(data_lines))
-        subset_lines = [header] + data_lines[:subset_count]
-    
-    # Write the subset file
-    with open(test_file, "w") as f:
-        f.writelines(subset_lines)
-        
-    logging.info(f"Created test subset with {len(subset_lines)-1} genomes")
-    
-    # In test mode, use the test file instead of the original
-    global prokaryotes_with_plasmids_file
-    prokaryotes_with_plasmids_file = test_file
-    return
-
-
 def run_pipeline_stage(stagenum, stage_complete_file, final_message, stage_function, *stage_function_args):
     if exists(stage_complete_file):
         print(f"{stage_complete_file} exists on disk-- skipping stage {stagenum}.")
@@ -2271,23 +2215,57 @@ def configure_logging(log_file):
     return
 
 
-def initialize_test_mode():
-    ## set up for TEST_MODE
-    ## Test pysradb functionality
-    try:
-        test_pysradb_functionality()
-    except Exception as e:
-        logging.error(f"pysradb test failed: {str(e)}")
-        ## Continue anyway
+def create_test_subset(prokaryotes_with_plasmids_file, test_genome_count):
+    """Create a subset of genomes for testing"""
+    original_file = "../results/complete-prokaryotes-with-plasmids.txt"
+    test_file = "../results/test-prokaryotes-with-plasmids.txt"
     
-    ## Handle test mode
-    logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
-    ## Create test subset
+    logging.info(f"Creating test subset with {test_genome_count} genomes")
+    
+    ## Read the original file
+    with open(original_file, "r") as f:
+        lines = f.readlines()
+        header = lines[0]
+        data_lines = lines[1:]
+        
+        ## Take the first test_genome_count genomes or all if fewer
+        subset_count = min(test_genome_count, len(data_lines))
+        subset_lines = [header] + data_lines[:subset_count]
+    
+    ## Write the subset file
+    with open(test_file, "w") as f:
+        f.writelines(subset_lines)
+        
+    logging.info(f"Created test subset with {len(subset_lines)-1} genomes")
+    
+    return test_file
+
+
+def test_pysradb_functionality():
+    """Test if pysradb is working correctly with a known SRA ID."""
+    test_sra_id = "SRS7822362"  
+    logging.info(f"Testing pysradb with SRA ID: {test_sra_id}")
+    
     try:
-        create_test_subset()
+        # Run the command directly
+        cmd = f"pysradb metadata {test_sra_id}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            logging.info(f"pysradb test successful. Output:\n{result.stdout}")
+            
+            # Try to parse the output
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                logging.info(f"Found {len(lines)-1} potential Run IDs")
+                for line in lines[1:]:
+                    logging.info(f"Potential Run ID line: {line}")
+            else:
+                logging.warning("No data rows in pysradb output")
+        else:
+            logging.error(f"pysradb test failed with error: {result.stderr}")
     except Exception as e:
-        logging.error(f"Error creating test subset: {str(e)}")
-        ## Continue anyway
+        logging.error(f"Error testing pysradb: {e}")
     return
 
 

@@ -32,42 +32,12 @@ TEST_DOWNLOAD_LIMIT= 50
 
 def run_PCN_pipeline():
     
-    ## Configure logging
-    log_dir = "../results"  # Use the results directory which is already mounted
-    log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
-    configure_logging(log_file)
-
-    
-    if TEST_MODE:
-        print("RUNNING IN TEST MODE: Set TEST_MODE = False in src/PCN_library.py if running full pipeline")
-        initialize_test_mode()
-    else:
-        logging.info("Running in PRODUCTION MODE")
-    
-        
     ## define input and output files used in the pipeline.
-    if TEST_MODE:
-        prokaryotes_with_plasmids_file = "../results/test-prokaryotes-with-plasmids.txt"
-        RunID_table_csv = "../results/test-RunID_table.csv"
-        reference_genome_dir = "../data/test-NCBI-reference-genomes/"
-        SRA_data_dir = "../data/test-SRA/"
-        # Create necessary directories
-        os.makedirs(reference_genome_dir, exist_ok=True)
-        os.makedirs(SRA_data_dir, exist_ok=True)
-        stage1_complete_file = "../results/test-stage1.done"
-        stage2_complete_file = "../results/test-stage2.done"
-        stage3_complete_file = "../results/test-stage3.done"
-    else:
-        prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
-        RunID_table_csv = "../results/RunID_table.csv"
-        reference_genome_dir = "../data/NCBI-reference-genomes/"
-        SRA_data_dir = "../data/SRA/"
-        os.makedirs(SRA_data_dir, exist_ok=True)
-        stage1_complete_file = "../results/stage1.done"
-        stage2_complete_file = "../results/stage2.done"
-        stage3_complete_file = "../results/stage3.done"
-
-    
+    prokaryotes_with_plasmids_file = "../results/complete-prokaryotes-with-plasmids.txt"
+    RunID_table_csv = "../results/RunID_table.csv"
+    reference_genome_dir = "../data/NCBI-reference-genomes/"
+    SRA_data_dir = "../data/SRA/"
+    os.makedirs(SRA_data_dir, exist_ok=True)
     replicon_length_csv_file = "../results/NCBI-replicon_lengths.csv"
 
     ## directories for themisto inputs and outputs.
@@ -113,6 +83,36 @@ def run_PCN_pipeline():
     ## summary of breseq coverage data.
     breseq_benchmark_summary_file = "../results/breseq-low-PCN-benchmark-estimates.csv"
     
+    stage1_complete_file = "../results/stage1.done"
+    stage2_complete_file = "../results/stage2.done"
+    stage3_complete_file = "../results/stage3.done"
+
+
+    ## Configure logging
+    log_dir = "../results"  # Use the results directory which is already mounted
+    log_file = f"{log_dir}/pipeline_test.log" if TEST_MODE else f"{log_dir}/pipeline.log"
+    configure_logging(log_file)
+    
+    
+    if TEST_MODE:
+        logging.info(f"Running in TEST MODE with {TEST_GENOME_COUNT} genomes")
+        print("RUNNING IN TEST MODE: Set TEST_MODE = False in src/PCN_library.py if running full pipeline")
+        print()
+
+        print("Testing pysradb:")
+        try:
+            test_pysradb_functionality()
+        except Exception as e:
+            logging.error(f"pysradb test failed: {str(e)}")
+            ## Continue anyway
+        print()
+        print(f"creating a small subset of {TEST_GENOME_COUNT} genomes for testing\n")
+        ## make a smaller prokaryotes_with_plasmids_file for testing, and use that for testing the pipeline.
+        prokaryotes_with_plasmids_file = create_test_subset(prokaryotes_with_plasmids_file, TEST_GENOME_COUNT)
+        
+    else:
+        logging.info("Running in PRODUCTION MODE")
+
     
     #####################################################################################
     ## Stage 1: get SRA IDs and Run IDs for all RefSeq bacterial genomes with chromosomes and plasmids.
@@ -276,10 +276,6 @@ def run_PCN_pipeline():
             stage3_complete_log.write("FASTQ data download from SRA complete.\n")
             quit()
 
-        ## Exit after stage 3 in test mode
-        if TEST_MODE:
-            logging.info("Test mode: All 3 stages completed. Exiting.")
-            return  ## Exit the main function
 
     #####################################################################################
     ## Stage 4: make gbk ecological annotation file.
