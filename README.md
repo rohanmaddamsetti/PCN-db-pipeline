@@ -45,11 +45,21 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 
 ## Notes before setting up the pipeline
 
-This pipeline should be run on a Linux HPC system with a SLURM job manager.
-The pipeline *can* be run on MacOS (we wrote and debugged most of the pipeline on MacOS) using the command “python PCN_pipeline.py”; however, we recommend that users *only* run the pipeline on MacOS for debugging or testing individual stages for the following reasons:
+The pipeline is currently set to Test Mode, so that a limited number of genomes are downloaded.
+In Test Mode, the pipeline *can* be run on MacOS as follows:
+
+```
+python PCN_pipeline.py
+```
+
+We recommend that users *only* run the pipeline on MacOS for debugging or testing individual stages for the following reasons:
+
 1) Several stages of the pipeline submit thousands of HPC jobs in parallel to speed up computation, and this is not possible on a laptop.
 2) The SRA data download is substantial– ~15TB of sequencing reads – and so a full download is not possible.  
 
+
+To run the full pipeline, open PCN_pipeline.py in your favorite text editor and set TEST_MODE = False in line 25.
+**The full pipeline should be run on a Linux HPC system with a SLURM job manager.**
 
 ## Setup
 
@@ -91,29 +101,43 @@ Then, copy the source code in this github repository into the src/ directory for
 
 ## Running the Pipeline
 
+### General notes on running the pipeline:
 
-   ```bash
-   conda activate PCNdb_env  
-   cd src/  
-   sbatch --mem=16G -t 430:00:00 --wrap="python PCN_pipeline.py"
-   ```
+The pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage. (This is helpful for debugging long computations).
 
-   You can submit to a partition specific to your lab as well, this is what we run on the Duke Compute Cluster in the You lab.
 
-   ```
-   sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
-   ```
+### Running the pipeline in Test Mode:
+
+The pipeline is currently set to **Test Mode**, so that a limited number of genomes are downloaded, so that the pipeline can be run locally on a laptop for testing.
+One can do so with the following snippet:
+
+```
+conda activate PCNdb_env
+cd src/
+python PCN_pipeline.py
+``` 
+
+### To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 25.
+
+**Users *must* run the full pipeline on a Linux HPC with the SLURM job manager for the following reasons.**
+1) Several stages of the pipeline submit thousands of HPC jobs in parallel to speed up computation, and this is not possible on a laptop.
+2) The SRA data download is substantial– ~15TB of sequencing reads – and so a full download is not possible.  
+
+
+```
+conda activate PCNdb_env
+cd src/
+sbatch --mem=16G -t 430:00:00 --wrap="python PCN_pipeline.py"
+```
+
+You can submit to a partition specific to your lab as well, this is what we run on the Duke Compute Cluster in the You lab.
+
+    sbatch --mem=16G -t 430:00:00 -p youlab --wrap="python PCN_pipeline.py"
 
 One our our users uses the MIT compute cluster, and uses the following snippet to load conda, activate their environment, and run the pipeline:
 
     sbatch --mem=16G -t 00:00:10 -p mit_normal --wrap=“source /home/software/anaconda3/2023.07/etc/profile.d/conda.sh && conda activate PCNdb_env && python PCN_pipeline.py”
 
-### Additional notes on running the pipeline:
-
-Note that the pipeline quits at the end of each stage (progress is saved). Therefore, one has to run the pipeline anew to start the next stage.
-
-
-The pipeline is currently set to **Test Mode**, so that a limited number of genomes are downloaded. To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 25.
 
 ## Expected Output
 
