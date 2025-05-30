@@ -354,7 +354,12 @@ def run_PCN_pipeline():
 
     #####################################################################################
     ## In order to benchmark accuracy, speed, and memory usage, estimate PCN for a subset of 100 genomes
-    ## that apparently contain low PCN plasmids (PCN < 0.8). 
+    ## that apparently contain low PCN plasmids (PCN < 0.8).
+
+    ## Only conduct benchmarking when the pipeline is run in PRODUCTION_MODE.
+    if TEST_MODE:
+        quit()    
+
     #####################################################################################
     ## Stage 15: choose a set of 100 random genomes that contain plasmids with PCN < 1
     ## and ReadCount > MIN_READ_COUNT.
