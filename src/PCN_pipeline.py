@@ -24,7 +24,7 @@ Edit these values as needed when running in TEST_MODE:
 """
 TEST_MODE = True ## Set to False to run the full pipeline (PRODUCTION MODE).
 TEST_GENOME_COUNT = 20  ## Number of genomes to process.
-TEST_DOWNLOAD_LIMIT = 2 ## Number of genomes for measuring PCN (genomes where we download read data)
+TEST_DOWNLOAD_LIMIT = 5 ## Number of genomes for measuring PCN (genomes where we download read data)
 TEST_PYSRADB = False ## set to try to test that pysradb is working (only runs when TEST_MODE == True)
 
 ################################################################################
