@@ -107,7 +107,7 @@ def run_PCN_pipeline():
                 logging.error(f"pysradb test failed: {str(e)}")
 
         print()
-        print(f"using a small subset of {TEST_GENOME_COUNT} genomes for testing\n")
+        print(f"using a small subset of {TEST_DOWNLOAD_LIMIT} genomes for testing\n")
         ## make a smaller prokaryotes_with_plasmids_file for testing, and use that for testing the pipeline.
         prokaryotes_with_plasmids_file = create_test_subset(prokaryotes_with_plasmids_file, TEST_GENOME_COUNT)
         
@@ -223,11 +223,11 @@ def run_PCN_pipeline():
                             Stage3TimeMessage = f"Stage 3 downloads completed successfully in {SRA_download_execution_time:.1f} seconds\n"
                             logging.info(Stage3TimeMessage)
                             try:
-                                with open(stage_3_complete_file, "w") as stage3_complete_log:
+                                with open(stage3_complete_file, "w") as stage3_complete_log:
                                     stage3_complete_log.write(Stage3TimeMessage)
                                     stage3_complete_log.write("reference genomes downloaded successfully.\n")
                             except IOError as e:
-                                logging.error(f"Could not write to {stage_3_complete_file}: {str(e)}")
+                                logging.error(f"Could not write to {stage3_complete_file}: {str(e)}")
                             if TEST_MODE:
                                 logging.info("Test mode: Stage 3 completed successfully")
                         else:
