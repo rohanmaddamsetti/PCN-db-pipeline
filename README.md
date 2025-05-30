@@ -117,7 +117,7 @@ cd src/
 python PCN_pipeline.py
 ``` 
 
-### To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 25.
+**To run the full pipeline, open `PCN_pipeline.py` in your favorite text editor and set `TEST_MODE = False` in line 25.**
 
 **Users *must* run the full pipeline on a Linux HPC with the SLURM job manager for the following reasons.**
 1) Several stages of the pipeline submit thousands of HPC jobs in parallel to speed up computation, and this is not possible on a laptop.
