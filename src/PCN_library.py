@@ -112,7 +112,6 @@ class RateLimiter:
 ################################################################################
 ## Functions.
 
-
 def get_SRA_ID_from_RefSeqID(refseq_id):
     """Fetch the SRA ID corresponding to a RefSeq accession ID."""
     logging.info(f"Getting SRA ID for {refseq_id}...")
@@ -204,7 +203,7 @@ def fetch_Run_IDs_with_pysradb(sra_id):
     return run_ids
 
 
-def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv):
+def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv, TEST_MODE, TEST_DOWNLOAD_LIMIT):
     """Create a table mapping RefSeq IDs to SRA IDs and Run IDs."""
     logging.info("Creating RefSeq SRA RunID table...")
     
@@ -225,8 +224,10 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_cs
             next(reader)  # Skip header
             
             for i, row in enumerate(reader):
-                if TEST_MODE and i >= TEST_DOWNLOAD_LIMIT:
-                    logging.info(f"Test mode: stopping after {TEST_DOWNLOAD_LIMIT} genomes")
+                
+                if TEST_MODE and successful_entries >= TEST_DOWNLOAD_LIMIT:
+                    logging.info(f"Test mode: stopping calls to {TEST_DOWNLOAD_LIMIT} genomes")
+                    print(f"Test mode: stopping RefSeq_SRA_RunID table after {TEST_DOWNLOAD_LIMIT} genome entries")
                     break
 
                 ## should be 23 tab-separated fields in complete-prokaryotes-with-plasmids.txt.
@@ -255,10 +256,10 @@ def create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_cs
                 else:
                     logging.warning(f"No SRA ID found for {RefSeq_ID}")
     
-    # Log summary
+    ## Log summary
     logging.info(f"Finished creating RunID table with {successful_entries} entries")
     
-    # Debug: output the contents of the file
+    ## Debug: output the contents of the file
     if exists(RunID_table_csv):
         with open(RunID_table_csv, 'r') as f:
             content = f.read()

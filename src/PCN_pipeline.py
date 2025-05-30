@@ -124,25 +124,7 @@ def run_PCN_pipeline():
         logging.info(Stage1DoneMessage)
     else:
         RunID_table_start_time = time.time()  # Record the start time
-        
-        if TEST_MODE:
-            logging.info(f"Test mode: limiting API calls to {TEST_DOWNLOAD_LIMIT} genomes")
-            # Create a limited version of the input file
-            with open(prokaryotes_with_plasmids_file, "r") as f:
-                lines = f.readlines()
-                header = lines[0]
-                data_lines = lines[1:TEST_DOWNLOAD_LIMIT+1]
-            
-            limited_file = prokaryotes_with_plasmids_file + ".limited"
-            with open(limited_file, "w") as f:
-                f.write(header)
-                f.writelines(data_lines)
-            
-            # Use the limited file for API calls
-            create_RefSeq_SRA_RunID_table(limited_file, RunID_table_csv)
-        else:
-            create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv)
-            
+        create_RefSeq_SRA_RunID_table(prokaryotes_with_plasmids_file, RunID_table_csv, TEST_MODE, TEST_DOWNLOAD_LIMIT)    
         RunID_table_end_time = time.time()  # Record the end time
         RunID_table_execution_time = RunID_table_end_time - RunID_table_start_time
         Stage1TimeMessage = f"Stage 1 execution time: {RunID_table_execution_time} seconds"
@@ -158,10 +140,7 @@ def run_PCN_pipeline():
         with open(stage1_complete_file, "w") as f:
             f.write(f"Stage 1 completed in {RunID_table_execution_time:.1f} seconds\n")
             quit()
-        
-        if TEST_MODE:
-            logging.info("Test mode: Stage 1 completed successfully")
-
+    
     #####################################################################################
     ## Stage 2: download reference genomes for each of the complete bacterial genomes containing plasmids,
     ## for which we can download Illumina reads from the NCBI Short Read Archive.
