@@ -65,7 +65,42 @@ To run the full pipeline, open PCN_pipeline.py in your favorite text editor and 
 
 ## Setup
 
-1. Install required dependencies and external tools (see requirements above).
+1. Create project structure by downloading or cloning this github repository.
+Alternatively, create a new top-level project directory
+with containing src/, data/, results/ directories.
+Then, copy the source code in this github repository into the src/ directory for your project.
+
+   ```bash
+   mkdir my-test-PCN-project
+   cd my-test-PCN-project
+   mkdir -p {data,results,src}
+   ```
+
+2. Download required data:
+   ```bash
+   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt ## on linux
+   curl https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt > data/prokaryotes.txt ## on mac and linux
+   ```
+
+3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_\*) to RefSeq Accessions (GCF_\*).
+   ```bash
+   grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
+   ```
+
+4. Set up conda environment and install python dependencies:
+   ```bash
+   conda create --name PCNdb_env --clone base
+   conda activate PCNdb_env
+   pip install pysradb biopython HTSeq beautifulsoup4 polars
+   conda install -c bioconda kallisto breseq
+   conda install -c conda-forge ncbi-datasets-cli tqdm
+   ```
+
+5. Install SRA-Toolkit:
+   - On DCC: `module load SRA-Toolkit/2.9.6-1` (users on other HPC systems will probably have a different version number).
+   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
+
+6. Install remaining required dependencies and external tools (see requirements above).
 
 - **External Tools:**  
   - [`themisto`](https://github.com/algbio/themisto/releases/) – must be installed and available in your `$PATH`
@@ -85,42 +120,6 @@ To run the full pipeline, open PCN_pipeline.py in your favorite text editor and 
 
     Alternatively, you can install themisto and minimap2 from github using the links above. Note that we have had difficulty compiling themisto from source. The v3.2.2 release works for us on MacOS and Linux.
     
-
-2. Create project structure by downloading or cloning this github repository.
-Alternatively, create a new top-level project directory
-with containing src/, data/, results/ directories.
-Then, copy the source code in this github repository into the src/ directory for your project.
-
-   ```bash
-   mkdir my-test-PCN-project
-   cd my-test-PCN-project
-   mkdir -p {data,results,src}
-   ```
-
-3. Download required data:
-   ```bash
-   wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt ## on linux
-   curl https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt > data/prokaryotes.txt ## on mac and linux
-   ```
-
-4. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_\*) to RefSeq Accessions (GCF_\*).
-   ```bash
-   grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
-   ```
-
-5. Set up conda environment and install python dependencies:
-   ```bash
-   conda create --name PCNdb_env --clone base
-   conda activate PCNdb_env
-   pip install pysradb biopython HTSeq beautifulsoup4 polars
-   conda install -c bioconda kallisto breseq
-   conda install -c conda-forge ncbi-datasets-cli tqdm
-   ```
-
-6. Install SRA-Toolkit:
-   - On DCC: `module load SRA-Toolkit`
-   - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
-
 
 ## Running the Pipeline
 
