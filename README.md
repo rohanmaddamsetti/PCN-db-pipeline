@@ -97,7 +97,7 @@ Then, copy the source code in this github repository into the src/ directory for
    ```
 
 5. Install SRA-Toolkit:
-   - On DCC: `module load SRA-Toolkit/2.9.6-1` (users on other HPC systems will probably have a different version number).
+   - On DCC: `module load SRA-Toolkit/3.0.0-rhel8` (users on other HPC systems will probably have a different version number).
    - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
 
 6. Install remaining required dependencies and external tools (see requirements above).
