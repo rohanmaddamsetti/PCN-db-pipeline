@@ -28,16 +28,24 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 ## Requirements
 
 ### Software
-- Python 3.11+
-- Polars 1.24.0 **IMPORTANT: there is a known bug where Polars 1.30.0 breaks PIRA code. Please install this version.**
-- Biopython 1.85
+- Python 3.12.9
 - SRA-Toolkit 3.2.0
 - pysradb 2.2.2
 - ncbi-datasets-cli 17.1.0
 - Themisto 3.2.2
 - minimap2 2.29 
-- Breseq 0.37+
+- Breseq 0.37+ **We recommend installing binary releases from the [breseq github](https://github.com/barricklab/breseq/releases/) over installing breseq using conda**
 - Kallisto 0.51.1
+
+
+### Python Libraries
+- Python==3.12.9
+- Biopython==1.85
+- Polars==1.24.0 **IMPORTANT: there is a known bug where Polars 1.30.0 breaks PIRA code. Please install Polars 1.24.0.**
+- HTSeq==2.0.9 **Current version may trigger SyntaxWarnings in Python, but does not cause any errors. See: https://github.com/htseq/htseq/pull/105)**
+- NumPy==2.2.3
+- argparse (standard library)
+
 
 ### Hardware
 - Required: Linux High Performance Computing Cluster (HPC) with SLURM job scheduler (https://slurm.schedmd.com/)
