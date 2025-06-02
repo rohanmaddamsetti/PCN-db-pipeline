@@ -91,7 +91,7 @@ Then, copy the source code in this github repository into the src/ directory for
    ```bash
    conda create --name PCNdb_env --clone base
    conda activate PCNdb_env
-   pip install pysradb biopython HTSeq beautifulsoup4 polars
+   pip install pysradb biopython HTSeq beautifulsoup4 polars==1.24.0
    conda install -c bioconda kallisto breseq
    conda install -c conda-forge ncbi-datasets-cli tqdm
    ```
