@@ -2,6 +2,7 @@
 
 A pipeline for analyzing plasmid copy numbers (PCN) in bacterial genomes.
 
+We thank Jia Lu and Zhengqing Zhou for extensive testing on the MIT computing cluster and the Duke Compute Cluster. Testing on MacOS done by Rohan Maddamsetti and Irida Shyti.
 
 ## Table of Contents
 1. [Overview](#overview)
