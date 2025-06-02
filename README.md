@@ -18,6 +18,7 @@ This pipeline analyzes plasmid copy numbers (PCN) in bacterial genomes using:
 - NCBI RefSeq genome annotation data
 - NCBI SRA Illumina short-read sequencing data
 - Themisto for pseudoalignment
+- minimap2 for re-aligning multireads
 - Kallisto for transcript quantification (not critical for PCN estimation, used for control experiments)
 - Breseq for mutation analysis (not critical for PCN estimation, used for control experiments)
 
@@ -33,6 +34,7 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 - pysradb 2.2.2
 - ncbi-datasets-cli 17.1.0
 - Themisto 3.2.2
+- minimap2 2.29 
 - Breseq 0.37+
 - Kallisto 0.51.1
 
@@ -63,7 +65,28 @@ To run the full pipeline, open PCN_pipeline.py in your favorite text editor and 
 
 ## Setup
 
-1. Create project structure by downloading or cloning this github repository.
+1. Install required dependencies and external tools (see requirements above).
+
+- **External Tools:**  
+  - [`themisto`](https://github.com/algbio/themisto/releases/) – must be installed and available in your `$PATH`
+  - [`minimap2`](https://github.com/lh3/minimap2/releases) – must be installed and available in your `$PATH`  
+
+    For convenience, MacOS and Linux binaries for `themisto` and a Linux binary for `minimap2` are provided in the `bin/` directory. You may have to turn these binaries into executables like so:
+
+    ```bash
+    chmod +x ${PWD}/bin/themisto_linux-v3.2.2/themisto  ##make the linux themisto binary into an executable
+    ```
+
+    Then, you can add these binaries to the `$PATH` from the command-line as follows, before running `pseuPIRA.py`:
+
+    ```bash
+    export PATH="${PWD}/bin/themisto_linux-v3.2.2:$PATH"
+    ```
+
+    Alternatively, you can install themisto and minimap2 from github using the links above. Note that we have had difficulty compiling themisto from source. The v3.2.2 release works for us on MacOS and Linux.
+    
+
+2. Create project structure by downloading or cloning this github repository.
 Alternatively, create a new top-level project directory
 with containing src/, data/, results/ directories.
 Then, copy the source code in this github repository into the src/ directory for your project.
@@ -74,18 +97,18 @@ Then, copy the source code in this github repository into the src/ directory for
    mkdir -p {data,results,src}
    ```
 
-2. Download required data:
+3. Download required data:
    ```bash
    wget -O data/prokaryotes.txt https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt ## on linux
    curl https://ftp.ncbi.nlm.nih.gov/genomes/GENOME_REPORTS/prokaryotes.txt > data/prokaryotes.txt ## on mac and linux
    ```
 
-3. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_\*) to RefSeq Accessions (GCF_\*).
+4. Filter for complete genomes containing plasmids, and change GenBank IDs (GCA_\*) to RefSeq Accessions (GCF_\*).
    ```bash
    grep "plasmid" data/prokaryotes.txt | grep "Complete Genome" | sed 's/GCA/GCF/g' > results/complete-prokaryotes-with-plasmids.txt
    ```
 
-4. Set up conda environment and install python dependencies:
+5. Set up conda environment and install python dependencies:
    ```bash
    conda create --name PCNdb_env --clone base
    conda activate PCNdb_env
@@ -94,7 +117,7 @@ Then, copy the source code in this github repository into the src/ directory for
    conda install -c conda-forge ncbi-datasets-cli tqdm
    ```
 
-5. Install SRA-Toolkit:
+6. Install SRA-Toolkit:
    - On DCC: `module load SRA-Toolkit`
    - Locally: Download from [SRA-Tools GitHub](https://github.com/ncbi/sra-tools)
 
