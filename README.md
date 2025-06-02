@@ -77,7 +77,7 @@ To run the full pipeline, open PCN_pipeline.py in your favorite text editor and 
     chmod +x ${PWD}/bin/themisto_linux-v3.2.2/themisto  ##make the linux themisto binary into an executable
     ```
 
-    Then, you can add these binaries to the `$PATH` from the command-line as follows, before running `pseuPIRA.py`:
+    Then, you can add these binaries to the `$PATH` from the command-line as follows, before running the pipeline:
 
     ```bash
     export PATH="${PWD}/bin/themisto_linux-v3.2.2:$PATH"
