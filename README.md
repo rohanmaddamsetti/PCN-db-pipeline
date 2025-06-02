@@ -29,6 +29,7 @@ All classes and functions are in the source code file src/PCN_library.py. Each s
 
 ### Software
 - Python 3.11+
+- Polars 1.24.0 **IMPORTANT: there is a known bug where Polars 1.30.0 breaks PIRA code. Please install this version.**
 - Biopython 1.85
 - SRA-Toolkit 3.2.0
 - pysradb 2.2.2
